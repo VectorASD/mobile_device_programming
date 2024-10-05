@@ -1,6 +1,7 @@
 if True: # __name__ == "__main__":
   from executor import main, load_codes # пока нереализован доступный всем способ компиляции БЕЗ доступа к компилятору (облачные технологии)
-  load_codes("PMY.py")
+  import os
+  load_codes(os.path.split(__file__)[-1])
   main("pmy")
   exit()
 
@@ -8,17 +9,20 @@ if True: # __name__ == "__main__":
 
 from int import INT
 from float import FLOAT 
+from double import DOUBLE
 
 from android.content.Context import Context
 from android.view.View import View
-from android.opengl.GLSurfaceView import GLSurfaceView
 from android.view.Window import Window
 from android.view.WindowManager_._LayoutParams import WindowManagerLayoutParams
-from javax.microedition.khronos.opengles.GL10 import GL10
+from android.view.MotionEvent import MotionEvent
+from android.opengl.GLSurfaceView import GLSurfaceView
 from android.opengl.GLES20 import GLES20
+from android.opengl.Matrix import Matrix
 from java.nio.Buffer import NIOBuffer
 from java.nio.ByteBuffer import jByteBuffer
 from java.nio.ByteOrder import ByteOrder
+from java.lang.Math import Math
 
 INTarr = ()._a_int # INT.new_array(0)
 FLOATarr = ()._a_float
@@ -32,6 +36,9 @@ FLOATarr = ()._a_float
 ACTIVITY_SERVICE = Context._f_ACTIVITY_SERVICE
 FEATURE_NO_TITLE = Window._f_FEATURE_NO_TITLE
 FLAG_FULLSCREEN = WindowManagerLayoutParams._f_FLAG_FULLSCREEN
+ACTION_DOWN = MotionEvent._f_ACTION_DOWN
+ACTION_MOVE = MotionEvent._f_ACTION_MOVE
+ACTION_UP = MotionEvent._f_ACTION_UP
 
 #for f in GLES20.fields(): print(f)
 #GL_QUAD_STRIP = GL10._f_GL_QUAD_STRIP
@@ -40,6 +47,7 @@ GL_TRIANGLE_STRIP = GLES20._f_GL_TRIANGLE_STRIP
 GL_TRIANGLE_FAN = GLES20._f_GL_TRIANGLE_FAN
 
 GL_COLOR_BUFFER_BIT = GLES20._f_GL_COLOR_BUFFER_BIT
+GL_DEPTH_BUFFER_BIT = GLES20._f_GL_DEPTH_BUFFER_BIT
 
 GL_VERTEX_SHADER = GLES20._f_GL_VERTEX_SHADER
 GL_FRAGMENT_SHADER = GLES20._f_GL_FRAGMENT_SHADER
@@ -58,6 +66,11 @@ GL_ELEMENT_ARRAY_BUFFER = GLES20._f_GL_ELEMENT_ARRAY_BUFFER
 GL_STATIC_DRAW = GLES20._f_GL_STATIC_DRAW
 
 
+
+sin = Math._mw_sin(DOUBLE)
+cos = Math._mw_cos(DOUBLE)
+PI = Math._f_PI
+PI180 = PI / 180
 
 glClearColor = GLES20._mw_glClearColor(FLOAT, FLOAT, FLOAT, FLOAT)
 glViewport = GLES20._mw_glViewport(INT, INT, INT, INT)
@@ -81,6 +94,7 @@ glGetAttribLocation = GLES20._mw_glGetAttribLocation(int, str) # program, name
 glGetUniformLocation = GLES20._mw_glGetUniformLocation(int, str) # program, name
 glGetError = GLES20._mw_glGetError()
 glUniform4f = GLES20._mw_glUniform4f(int, float, float, float, float) # location, x, y, z, w
+glUniformMatrix4fv = GLES20._mw_glUniformMatrix4fv(int, int, bool, FLOATarr, int) # location, count, transpose, value, offset
 
 glGenBuffers = GLES20._mw_glGenBuffers(INT, INTarr, INT) # n, buffers, offset
 glGenTextures = GLES20._mw_glGenTextures(INT, INTarr, INT) # n, textures, offset
@@ -97,10 +111,16 @@ glDrawElements = GLES20._mw_glDrawElements(int, int, int, int) # mode, count, ty
 glEnable = GLES20._mw_glEnable(int) # cap
 glDisable = GLES20._mw_glDisable(int) # cap
 GL_BLEND = GLES20._f_GL_BLEND
+GL_DEPTH_TEST = GLES20._f_GL_DEPTH_TEST
 
 glBlendFunc = GLES20._mw_glBlendFunc(int, int) # src factor, dst factor
 GL_SRC_ALPHA = GLES20._f_GL_SRC_ALPHA
 GL_ONE_MINUS_SRC_ALPHA = GLES20._f_GL_ONE_MINUS_SRC_ALPHA
+
+perspectiveM = Matrix._mw_perspectiveM(FLOATarr, int, float, float, float, float) # m, offset, fovy, aspect, zNear, zFar
+setLookAtM = Matrix._mw_setLookAtM(FLOATarr, int, float, float, float, float, float, float, float, float, float) # rm, rmOffset, eyeX, eyeY, eyeZ, centerX, centerY, centerZ, upX, upY, upZ
+setIdentityM = Matrix._mw_setIdentityM(FLOATarr, int) # sm, smOffset
+multiplyMM = Matrix._mw_multiplyMM(FLOATarr, int, FLOATarr, int, FLOATarr, int) # result, resultOffset, lhs, lhsOffset, rhs, rhsOffset
 
 
 
@@ -189,9 +209,10 @@ def mainProgram():
   program = newProgram("""
 attribute vec4 vPosition;
 attribute vec4 vColor;
+uniform mat4 uMVPMatrix; 
 varying vec4 vaColor;
 void main() {
-  gl_Position = vPosition;
+  gl_Position = uMVPMatrix * vPosition;
   vaColor = vColor;
 }
 """, """
@@ -200,7 +221,7 @@ varying vec4 vaColor;
 void main() {
   gl_FragColor = vaColor;
 }
-""", ('vPosition', 'vColor'), ())
+""", ('vPosition', 'vColor'), ('uMVPMatrix',))
   if type(program) is str:
     print("shader program error:")
     print(program)
@@ -208,24 +229,40 @@ void main() {
   print("OK shader program:", program)
   return program
 
-def triangle(ratio):
+def figures():
   buffers = INT.new_array(2)
   glGenBuffers(2, buffers, 0)
   VBO, IBO = buffers
 
-  ratio *= (1 - 0.5 ** 2) ** 0.5
+  ratio = (2 ** 2 - 1) ** 0.5
   ratio2 = ratio * 0.6
 
   VBOdata = FloatBuffer((
-      0,  ratio, 0, 1, 0, 0, 1,
-     -1, -ratio, 0, 0, 1, 0, 1,
-      1, -ratio, 0, 0, 0, 1, 1,
-    0.8,  ratio, 0, 1, 1, 0, 1,
-    0.6, ratio2, 0, 1, 0, 1, 1,
-      1, ratio2, 0, 0, 1, 1, 1,
-    0.6,  ratio, 0, 0, 0, 0, 0,
-  )) # в будущем это будут 3d-координаты
-  IBOdata = IntBuffer((0, 1, 2, 5, 4, 3, 0, 4, 6)) # в будущем это будут сами полигоны = сетка, 3d-нормали и 2d-UV вершин
+      0,  ratio, 4, 1, 0, 0, 1,
+     -2, -ratio, 4, 0, 1, 0, 1,
+      2, -ratio, 4, 0, 0, 1, 1,
+   -1.6,  ratio, 4, 1, 1, 0, 1,
+   -1.2, ratio2, 4, 1, 0, 1, 1,
+     -2, ratio2, 4, 0, 1, 1, 1,
+   -1.2,  ratio, 4, 0, 0, 0, 0,
+     -1, -1, -1,    1, 1, 1, 1, #  7
+      1, -1, -1,    1, 0, 0, 1, #  8
+      1, -1,  1,    1, 1, 0, 1, #  9
+     -1, -1,  1,    0, 0, 1, 1, # 10
+     -1,  1, -1,    0, 1, 0, 1, # 11
+      1,  1, -1,    0, 1, 1, 1, # 12
+      1,  1,  1,    0, 0, 0, 0, # 13
+     -1,  1,  1,    1, 0, 1, 1, # 14
+  )) # 3d-координаты и раскраска вершин
+  IBOdata = IntBuffer((
+     0,  1,  2,  5,  4,  3, 0, 4, 6, # старые 3 треугольника
+     7,  8,  9,  7,  9, 10, # дно куба
+     7,  8, 11,  8, 11, 12, # фронт
+     8,  9, 12,  9, 12, 13, # правый бок
+     9, 10, 13, 10, 13, 14, # тыл
+    10,  7, 14,  7, 14, 11, # левый бок
+    11, 12, 13, 11, 13, 14, # верх куба
+  )) # в будущем это будут сами полигоны = сетка, 3d-нормали и 2d-UV вершин
 
   glBindBuffer(GL_ARRAY_BUFFER, VBO)
   glBufferData(GL_ARRAY_BUFFER, VBOdata.capacity() * 4, VBOdata.fb, GL_STATIC_DRAW)
@@ -279,6 +316,8 @@ def Activity():
       self.last_time = time() + 0.1
       self.frame_pos = 0
       self.frame_arr = None
+      self.fpsS = "?"
+      self.yaw = self.pitch = self.roll = 0
 
     def fps(self):
       T = time()
@@ -290,10 +329,11 @@ def Activity():
         self.frame_pos = pos = (self.frame_pos + 1) % 10
         if arr is None: self.frame_arr = arr = [fd] * 10
         else: arr[pos] = fd
-      if arr is None: return "?"
-      S = 0
-      for i in arr: S += i
-      return S
+        S = 0
+        for i in arr: S += i
+        self.fpsS = S
+        print(S)
+      return self.fpsS
 
     def onSurfaceCreated(self, gl10, config):
       print("📽️ onSurfaceCreated", gl10, config)
@@ -303,17 +343,53 @@ def Activity():
       #glUniform4f(uniforms["vColor"], 0, 0, 1, 1)
       glEnable(GL_BLEND)
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+      glEnable(GL_DEPTH_TEST)
+
+      self.modelM = modelM = FLOAT.new_array(16)
+      self.viewM = FLOAT.new_array(16)
+      self.projectionM = FLOAT.new_array(16)
+      self.MVPmatrix = FLOAT.new_array(16)
+
+      setIdentityM(modelM, 0)
+      self.calcViewMatrix()
 
     def onSurfaceChanged(self, gl10, width, height):
       print("📽️ onSurfaceChanged", gl10, width, height)
       glViewport(0, 0, width, height)
       self.W, self.H, self.WH_ratio = width, height, width / height
-      self.buffers = triangle(self.WH_ratio)
+      self.buffers = figures()
+
+      perspectiveM(self.projectionM, 0, 90, self.WH_ratio, 0.01, 1000)
+      self.calcMVPmatrix()
+
+    def calcMVPmatrix(self):
+      MVPmatrix = self.MVPmatrix
+      multiplyMM(MVPmatrix, 0, self.projectionM, 0, self.viewM, 0)
+      multiplyMM(MVPmatrix, 0, MVPmatrix, 0, self.modelM, 0)
+      # print("MVP:", self.MVPmatrix[:])
+      uniforms = self.program[2]
+      glUniformMatrix4fv(uniforms["uMVPMatrix"], 1, False, MVPmatrix, 0)
+      self.updMVP = True
+
+    def calcViewMatrix(self):
+      viewM = self.viewM
+      yaw = self.yaw * PI180
+      pitch = self.pitch * PI180
+      sYaw, cYaw = sin(yaw), cos(yaw)
+      sPitch, cPitch = sin(pitch), cos(pitch)
+      R = -3.5
+      setLookAtM(viewM, 0,
+        sYaw * cPitch * R, sPitch * R, cYaw * cPitch * R, # eye
+        0, 0, 0, # center
+        0, 1, 0, # up
+      )
+      self.updMVP = True
 
     def onDrawFrame(self, gl10):
       self.frames += 1
       #print("📽️ onDraw", gl)
-      glClear(GL_COLOR_BUFFER_BIT)
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+      if self.updMVP: self.calcMVPmatrix()
 
       program, attribs, uniforms = self.program
       vPosition = attribs["vPosition"]
@@ -328,12 +404,17 @@ def Activity():
       glVertexAttribPointer(vPosition, 3, GL_FLOAT, False, 7 * 4, 0)
       glVertexAttribPointer(vColor,    4, GL_FLOAT, False, 7 * 4, 3 * 4)
       glDrawElements(GL_TRIANGLES, indexes, GL_UNSIGNED_INT, 0)
-      print(self.fps())
+      self.fps()
 
       glBindBuffer(GL_ARRAY_BUFFER, 0)
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
       glDisableVertexAttribArray(vPosition)
       glDisableVertexAttribArray(vColor)
+
+    def move(self, dx, dy):
+      self.yaw -= dx * 0.5
+      self.pitch = max(-89, min(self.pitch - dy * 0.5, 89))
+      self.calcViewMatrix()
 
     reverse = {
       "cr": onSurfaceCreated,
@@ -352,15 +433,17 @@ def Activity():
       activity._m_getWindow()._m_setFlags(FLAG_FULLSCREEN, FLAG_FULLSCREEN) # Remove notification bar
 
       view = GLSurfaceView(ctx)
-      renderer = rm.renderer(myRenderer())
+      renderer = myRenderer()
+      renderer2 = rm.renderer(renderer)
       print("V:", view)
-      print("R:", renderer)
+      print("R:", renderer2)
       view._m_setEGLContextClientVersion(2)
-      view._m_setRenderer(renderer)
+      view._m_setRenderer(renderer2)
       activity._mw_setContentView(View)(view)
 
       self.viewResume = view._mw_onResume()
       self.viewPause = view._mw_onPause()
+      self.renderer = renderer
 
       return True # lock setContentView
 
@@ -375,7 +458,14 @@ def Activity():
     def onStop(self): print("onStop")
     def onDestroy(self): print("onDestroy")
     def onTouchEvent(self, e):
-      print("onTouchEvent", e)
+      action = e._m_getAction()
+      if action == ACTION_DOWN:
+        x, y = e._m_getX(), e._m_getY()
+        self.prevX, self.prevY = x, y
+      elif action == ACTION_MOVE:
+        x, y = e._m_getX(), e._m_getY()
+        self.renderer.move(x - self.prevX, y - self.prevY)
+        self.prevX, self.prevY = x, y
       return True
     def onKeyDown(self, num, e):
       print("onKeyDown", num, e)
