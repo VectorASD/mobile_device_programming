@@ -94,6 +94,14 @@ glDisableVertexAttribArray = GLES20._mw_glEnableVertexAttribArray(int) # locatio
 glVertexAttribPointer = GLES20._mw_glVertexAttribPointer(int, int, int, bool, int, int) # location, size, type, normalized, stride, offset
 glDrawElements = GLES20._mw_glDrawElements(int, int, int, int) # mode, count, type, offset
 
+glEnable = GLES20._mw_glEnable(int) # cap
+glDisable = GLES20._mw_glDisable(int) # cap
+GL_BLEND = GLES20._f_GL_BLEND
+
+glBlendFunc = GLES20._mw_glBlendFunc(int, int) # src factor, dst factor
+GL_SRC_ALPHA = GLES20._f_GL_SRC_ALPHA
+GL_ONE_MINUS_SRC_ALPHA = GLES20._f_GL_ONE_MINUS_SRC_ALPHA
+
 
 
 class MyBuffer:
@@ -180,16 +188,19 @@ def newProgram(vCode, fCode, attribs, uniforms):
 def mainProgram():
   program = newProgram("""
 attribute vec4 vPosition;
+attribute vec4 vColor;
+varying vec4 vaColor;
 void main() {
   gl_Position = vPosition;
+  vaColor = vColor;
 }
 """, """
 precision mediump float;
-uniform vec4 vColor;
+varying vec4 vaColor;
 void main() {
-  gl_FragColor = vColor;
+  gl_FragColor = vaColor;
 }
-""", ('vPosition',), ('vColor',))
+""", ('vPosition', 'vColor'), ())
   if type(program) is str:
     print("shader program error:")
     print(program)
@@ -206,15 +217,15 @@ def triangle(ratio):
   ratio2 = ratio * 0.6
 
   VBOdata = FloatBuffer((
-      0,  ratio, 0,
-     -1, -ratio, 0,
-      1, -ratio, 0,
-    0.8,  ratio, 0,
-    0.6, ratio2, 0,
-      1, ratio2, 0,
-    0.6,  ratio, 0,
-  )) # в будущем это будут 3d-координаты, 3d-нормали и 2d-UV вершин
-  IBOdata = IntBuffer((0, 1, 2, 5, 4, 3, 0, 4, 6)) # в будущем это будут сами полигоны = сетка
+      0,  ratio, 0, 1, 0, 0, 1,
+     -1, -ratio, 0, 0, 1, 0, 1,
+      1, -ratio, 0, 0, 0, 1, 1,
+    0.8,  ratio, 0, 1, 1, 0, 1,
+    0.6, ratio2, 0, 1, 0, 1, 1,
+      1, ratio2, 0, 0, 1, 1, 1,
+    0.6,  ratio, 0, 0, 0, 0, 0,
+  )) # в будущем это будут 3d-координаты
+  IBOdata = IntBuffer((0, 1, 2, 5, 4, 3, 0, 4, 6)) # в будущем это будут сами полигоны = сетка, 3d-нормали и 2d-UV вершин
 
   glBindBuffer(GL_ARRAY_BUFFER, VBO)
   glBufferData(GL_ARRAY_BUFFER, VBOdata.capacity() * 4, VBOdata.fb, GL_STATIC_DRAW)
@@ -288,9 +299,10 @@ def Activity():
       print("📽️ onSurfaceCreated", gl10, config)
       glClearColor(0.9, 0.95, 1, 0)
       self.program = program, attribs, uniforms = mainProgram()
-      vColor = uniforms["vColor"]
       glUseProgram(program)
-      glUniform4f(vColor, 0, 0, 1, 1)
+      #glUniform4f(uniforms["vColor"], 0, 0, 1, 1)
+      glEnable(GL_BLEND)
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
     def onSurfaceChanged(self, gl10, width, height):
       print("📽️ onSurfaceChanged", gl10, width, height)
@@ -305,21 +317,23 @@ def Activity():
 
       program, attribs, uniforms = self.program
       vPosition = attribs["vPosition"]
+      vColor    = attribs["vColor"]
       VBO, IBO, indexes = self.buffers
 
       glEnableVertexAttribArray(vPosition)
+      glEnableVertexAttribArray(vColor)
       glBindBuffer(GL_ARRAY_BUFFER, VBO)
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO)
 
-      glVertexAttribPointer(vPosition, 3, GL_FLOAT, False, 0, 0)
+      glVertexAttribPointer(vPosition, 3, GL_FLOAT, False, 7 * 4, 0)
+      glVertexAttribPointer(vColor,    4, GL_FLOAT, False, 7 * 4, 3 * 4)
       glDrawElements(GL_TRIANGLES, indexes, GL_UNSIGNED_INT, 0)
       print(self.fps())
 
       glBindBuffer(GL_ARRAY_BUFFER, 0)
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
       glDisableVertexAttribArray(vPosition)
-
-      
+      glDisableVertexAttribArray(vColor)
 
     reverse = {
       "cr": onSurfaceCreated,
