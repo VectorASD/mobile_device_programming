@@ -108,6 +108,7 @@ glEnable = GLES20._mw_glEnable(int) # cap
 glDisable = GLES20._mw_glDisable(int) # cap
 GL_BLEND = GLES20._f_GL_BLEND
 GL_DEPTH_TEST = GLES20._f_GL_DEPTH_TEST
+GL_CULL_FACE = GLES20._f_GL_CULL_FACE
 
 glBlendFunc = GLES20._mw_glBlendFunc(int, int) # src factor, dst factor
 GL_SRC_ALPHA = GLES20._f_GL_SRC_ALPHA
@@ -194,6 +195,7 @@ def newProgram(vCode, fCode, attribs, uniforms):
 
   glDeleteShader(vShader)
   glDeleteShader(fShader)
+  glUseProgram(program)
 
   attribLocs = {}
   for name in attribs:
@@ -204,6 +206,7 @@ def newProgram(vCode, fCode, attribs, uniforms):
     if loc < 0:
       return "attribute %r not found: %s" % (name, loc)
     attribLocs[name] = loc
+    glEnableVertexAttribArray(loc)
 
   uniformLocs = {}
   for name in uniforms:
@@ -214,6 +217,15 @@ def newProgram(vCode, fCode, attribs, uniforms):
     if loc < 0:
       return "uniform %r not found: %s" % (name, loc)
     uniformLocs[name] = loc
+
+  # утерян смысл в следующих строках:
+  #glEnableVertexAttribArray(vPosition)
+  #glEnableVertexAttribArray(vColor)
+  #glEnableVertexAttribArray(vUV)
+  #...
+  #glDisableVertexAttribArray(vPosition)
+  #glDisableVertexAttribArray(vColor)
+  #glDisableVertexAttribArray(vUV)
 
   return program, attribLocs, uniformLocs
 
@@ -244,3 +256,47 @@ def newTexture(ctxResources, resId):
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer.fb)
 
   return textureId
+
+
+
+class Model:
+  vPosition = vColor = vUV = None
+  def calcAttribs(attribs):
+    Model.vPosition = attribs["vPosition"]
+    Model.vColor    = attribs["vColor"]
+    Model.vUV       = attribs["vUV"]
+
+  def __init__(self, VBOdata, IBOdata):
+    buffers = INT.new_array(2)
+    glGenBuffers(2, buffers, 0)
+    VBO, IBO = buffers
+
+    # 3d-координаты, раскраска вершин и 2d-UV вершин
+    VBOdata = FloatBuffer(VBOdata)
+    # сами полигоны = сетка
+    IBOdata = IntBuffer(IBOdata)
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO)
+    glBufferData(GL_ARRAY_BUFFER, VBOdata.capacity() * 4, VBOdata.fb, GL_STATIC_DRAW)
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO)
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, IBOdata.capacity() * 4, IBOdata.fb, GL_STATIC_DRAW)
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+
+    print("✅ OK buffers:", VBO, IBO)
+    self.data = VBO, IBO, IBOdata.capacity()
+
+  def draw(self):
+    VBO, IBO, indexes = self.data
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO)
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO)
+
+    glVertexAttribPointer(Model.vPosition, 3, GL_FLOAT, False, 9 * 4, 0)
+    glVertexAttribPointer(Model.vColor,    4, GL_FLOAT, False, 9 * 4, 3 * 4)
+    glVertexAttribPointer(Model.vUV,       2, GL_FLOAT, False, 9 * 4, 7 * 4)
+
+    glDrawElements(GL_TRIANGLES, indexes, GL_UNSIGNED_INT, 0)
+    #glBindBuffer(GL_ARRAY_BUFFER, 0)
+    #glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)

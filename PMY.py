@@ -50,14 +50,10 @@ void main() {
 
 
 def figures():
-  buffers = INT.new_array(2)
-  glGenBuffers(2, buffers, 0)
-  VBO, IBO = buffers
-
   ratio = (2 ** 2 - 1) ** 0.5
   ratio2 = ratio * 0.6
 
-  VBOdata = FloatBuffer((
+  triangles = Model((
       0,  ratio, 4, 1, 0, 0, 1, -1, -1,
      -2, -ratio, 4, 0, 1, 0, 1, -1, -1,
       2, -ratio, 4, 0, 0, 1, 1, -1, -1,
@@ -65,54 +61,34 @@ def figures():
    -1.2, ratio2, 4, 1, 0, 1, 1, -1, -1,
      -2, ratio2, 4, 0, 1, 1, 1, -1, -1,
    -1.2,  ratio, 4, 0, 0, 0, 0, -1, -1,
-     -1, -1, -1,    1, 1, 1, 1, -1, -1, #  7
-      1, -1, -1,    1, 0, 0, 1, -1, -1, #  8
-      1, -1,  1,    1, 1, 0, 1, -1, -1, #  9
-     -1, -1,  1,    0, 0, 1, 1, -1, -1, # 10
-     -1,  1, -1,    0, 1, 0, 1, -1, -1, # 11
-      1,  1, -1,    0, 1, 1, 1, -1, -1, # 12
-      1,  1,  1,    0, 0, 0, 0, -1, -1, # 13
-     -1,  1,  1,    1, 0, 1, 1, -1, -1, # 14
-     -1, -1, -1,    1, 1, 1, 1,  1, 2/8, # 15
-      1, -1, -1,    1, 0, 0, 1,  0, 2/8, # 16
-     -1,  1, -1,    0, 1, 0, 1,  1, 1/8, # 17
-      1,  1, -1,    0, 1, 1, 1,  0, 1/8, # 18
-  )) # 3d-координаты и раскраска вершин
-  IBOdata = IntBuffer((
-     0,  1,  2,  5,  4,  3, 0, 4, 6, # старые 3 треугольника
-     7,  8,  9,  7,  9, 10, # дно куба
-   # 7,  8, 11,  8, 11, 12, # фронт
-    15, 16, 17, 16, 17, 18, # фронт
-     8,  9, 12,  9, 12, 13, # правый бок
-     9, 10, 14,  9, 13, 14, # тыл
-    10,  7, 14,  7, 14, 11, # левый бок
-    11, 12, 14, 12, 14, 13, # верх куба
-  )) # сами полигоны = сетка, 2d-UV вершин
+  ), (
+    0, 2, 1, 3, 4, 5, 0, 4, 6, # старые 3 треугольника
+  ))
 
-  glBindBuffer(GL_ARRAY_BUFFER, VBO)
-  glBufferData(GL_ARRAY_BUFFER, VBOdata.capacity() * 4, VBOdata.fb, GL_STATIC_DRAW)
-  glBindBuffer(GL_ARRAY_BUFFER, 0)
+  cube = Model((
+    -1, -1, -1,   1, 1, 1, 1,   -1, -1, #  0
+     1, -1, -1,   1, 0, 0, 1,   -1, -1, #  1
+     1, -1,  1,   1, 1, 0, 1,   -1, -1, #  2
+    -1, -1,  1,   0, 0, 1, 1,   -1, -1, #  3
+    -1,  1, -1,   0, 1, 0, 1,   -1, -1, #  4
+     1,  1, -1,   0, 1, 1, 1,   -1, -1, #  5
+     1,  1,  1,   0, 0, 0, 0,   -1, -1, #  6
+    -1,  1,  1,   1, 0, 1, 1,   -1, -1, #  7
+    -1, -1, -1,   1, 1, 1, 1,    1, 2/8, # 8
+     1, -1, -1,   1, 0, 0, 1,    0, 2/8, # 9
+    -1,  1, -1,   0, 1, 0, 1,    1, 1/8, # 10
+     1,  1, -1,   0, 1, 1, 1,    0, 1/8, # 11
+  ), (
+     0,  1,  2,  0,  2,  3, # дно куба
+   # 0,  1,  4,  1,  4,  5, # фронт
+     8, 10,  9,  9, 10, 11, # фронт
+     1,  5,  2,  2,  5,  6, # правый бок
+     2,  7,  3,  2,  6,  7, # тыл
+     3,  7,  0,  0,  7,  4, # левый бок
+     4,  7,  5,  5,  7,  6, # верх куба
+  ))
 
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO)
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, IBOdata.capacity() * 4, IBOdata.fb, GL_STATIC_DRAW)
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
-
-  print("✅ OK buffers:", VBO, IBO)
-  return VBO, IBO, IBOdata.capacity()
-
-  """
-  Бортанули нас с этими списками отображения: в OpenGL ES их неть
-
-  gl._m_glBegin(GL_TRIANGLE_STRIP)
-  glVertex3f = gl._mw_glVertex3f(float, float, float)
-  glVertex3f(-1, -1, 0)
-  glVertex3f( 1, -1, 0)
-  glVertex3f( 1,  1, 0)
-  glVertex3f(-1,  1, 0)
-  gl._m_glEnd()
-  """
-
-
+  return triangles, cube
 
 
 
@@ -163,11 +139,13 @@ class myRenderer:
     print("📽️ onSurfaceCreated", gl10, config)
     glClearColor(0.9, 0.95, 1, 0)
     self.program = program, attribs, uniforms = mainProgram()
-    glUseProgram(program)
+    Model.calcAttribs(attribs)
+
     #glUniform4f(uniforms["vColor"], 0, 0, 1, 1)
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
     glEnable(GL_DEPTH_TEST)
+    glEnable(GL_CULL_FACE)
 
     self.modelM = modelM = FLOAT.new_array(16)
     self.viewM = FLOAT.new_array(16)
@@ -180,7 +158,7 @@ class myRenderer:
     textures = rm.get("drawable/textures")
     textureId = newTexture(ctxResources, textures)
     print("textures:", hex(textures), textureId)
-      
+
     glUniform1i(uniforms["uTexture"], 0);
     glActiveTexture(GL_TEXTURE0)
     glBindTexture(GL_TEXTURE_2D, textureId)
@@ -189,7 +167,7 @@ class myRenderer:
     print("📽️ onSurfaceChanged", gl10, width, height)
     glViewport(0, 0, width, height)
     self.W, self.H, self.WH_ratio = width, height, width / height
-    self.buffers = figures()
+    self.models = figures()
 
     perspectiveM(self.projectionM, 0, 90, self.WH_ratio, 0.01, 1000)
     self.calcMVPmatrix()
@@ -223,29 +201,8 @@ class myRenderer:
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     if self.updMVP: self.calcMVPmatrix()
 
-    program, attribs, uniforms = self.program
-    vPosition = attribs["vPosition"]
-    vColor    = attribs["vColor"]
-    vUV       = attribs["vUV"]
-    VBO, IBO, indexes = self.buffers
-
-    glEnableVertexAttribArray(vPosition)
-    glEnableVertexAttribArray(vColor)
-    glEnableVertexAttribArray(vUV)
-    glBindBuffer(GL_ARRAY_BUFFER, VBO)
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO)
-
-    glVertexAttribPointer(vPosition, 3, GL_FLOAT, False, 9 * 4, 0)
-    glVertexAttribPointer(vColor,    4, GL_FLOAT, False, 9 * 4, 3 * 4)
-    glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 9 * 4, 7 * 4)
-    glDrawElements(GL_TRIANGLES, indexes, GL_UNSIGNED_INT, 0)
+    for model in self.models: model.draw()
     self.fps()
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0)
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
-    glDisableVertexAttribArray(vPosition)
-    glDisableVertexAttribArray(vColor)
-    glDisableVertexAttribArray(vUV)
 
   def move(self, dx, dy):
     self.yaw -= dx * 0.5
