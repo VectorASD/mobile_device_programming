@@ -23,6 +23,8 @@ from java.nio.Buffer import NIOBuffer
 from java.nio.ByteBuffer import jByteBuffer
 from java.nio.ByteOrder import ByteOrder
 from java.lang.Math import Math
+from android.graphics.BitmapFactory import BitmapFactory
+from android.graphics.BitmapFactory_._Options import BitmapFactoryOptions
 
 INTarr = ()._a_int # INT.new_array(0)
 FLOATarr = ()._a_float
@@ -59,7 +61,9 @@ GL_FALSE = GLES20._f_GL_FALSE
 GL_TRUE = GLES20._f_GL_TRUE
 GL_NO_ERROR = GLES20._f_GL_NO_ERROR
 GL_FLOAT = GLES20._f_GL_FLOAT
+GL_UNSIGNED_BYTE = GLES20._f_GL_UNSIGNED_BYTE
 GL_UNSIGNED_INT = GLES20._f_GL_UNSIGNED_INT
+GL_RGBA = GLES20._f_GL_RGBA
 
 GL_ARRAY_BUFFER = GLES20._f_GL_ARRAY_BUFFER
 GL_ELEMENT_ARRAY_BUFFER = GLES20._f_GL_ELEMENT_ARRAY_BUFFER
@@ -93,6 +97,7 @@ glDeleteProgram = GLES20._mw_glDeleteProgram(INT)
 glGetAttribLocation = GLES20._mw_glGetAttribLocation(int, str) # program, name
 glGetUniformLocation = GLES20._mw_glGetUniformLocation(int, str) # program, name
 glGetError = GLES20._mw_glGetError()
+glUniform1i = GLES20._mw_glUniform1i(int, int) # location, x
 glUniform4f = GLES20._mw_glUniform4f(int, float, float, float, float) # location, x, y, z, w
 glUniformMatrix4fv = GLES20._mw_glUniformMatrix4fv(int, int, bool, FLOATarr, int) # location, count, transpose, value, offset
 
@@ -125,9 +130,10 @@ multiplyMM = Matrix._mw_multiplyMM(FLOATarr, int, FLOATarr, int, FLOATarr, int) 
 
 
 class MyBuffer:
-  allocateDirect = jByteBuffer._mw_allocateDirect(INT)
+  allocate = jByteBuffer._mw_allocate(int)
+  allocateDirect = jByteBuffer._mw_allocateDirect(int)
   nativeOrder = ByteOrder._m_nativeOrder()
-  def __init__(self, isFloat, data = ()):
+  def __init__(self, isFloat, data = (), isArr = False):
     bb = MyBuffer.allocateDirect(len(data) * 4)
     bb._m_order(MyBuffer.nativeOrder)
     fb = bb._m_asFloatBuffer() if isFloat else bb._m_asIntBuffer()
@@ -138,12 +144,13 @@ class MyBuffer:
     self.capacity = fb._mw_capacity()
     self.fb = fb # float buffer (либо int buffer)
 
-    put(data._a_float if isFloat else data._a_int)
+    if isArr: put(data)
+    else: put(data._a_float if isFloat else data._a_int)
     #print("pos:", self.getPos()) и есть len(data)
     pos(0)
 
-def FloatBuffer(data = ()): return MyBuffer(True, data)
-def IntBuffer(data = ()): return MyBuffer(False, data)
+def FloatBuffer(data = (), isArr = False): return MyBuffer(True, data, isArr)
+def IntBuffer(data = (), isArr = False): return MyBuffer(False, data, isArr)
 
 #print(FloatBuffer().capacity()) # -> 0
 #print(FloatBuffer((0, .5, 0)).capacity()) # -> 3
@@ -183,6 +190,9 @@ def newProgram(vCode, fCode, attribs, uniforms):
     glDeleteProgram(program)
     return err
 
+  glDeleteShader(vShader)
+  glDeleteShader(fShader)
+
   attribLocs = {}
   for name in attribs:
     loc = glGetAttribLocation(program, name)
@@ -205,28 +215,77 @@ def newProgram(vCode, fCode, attribs, uniforms):
 
   return program, attribLocs, uniformLocs
 
+bitmapFactoryOptions = BitmapFactoryOptions()
+bitmapFactoryOptions._f_inScaled = False # чтобы не раздувало
+bitmapFactoryOptions._f_inDensity = 0 # чтобы не сглаживало (все 3 Density)
+bitmapFactoryOptions._f_inScreenDensity = 0
+bitmapFactoryOptions._f_inTargetDensity = 0
+
+glBindTexture = GLES20._mw_glBindTexture(int, int)
+glTexParameteri = GLES20._mw_glTexParameteri(int, int, int)
+glTexImage2D = GLES20._mw_glTexImage2D(int, int, int, int, int, int, int, int, NIOBuffer) # target, level, internalformat, width, height, border, format, type, pixels
+GL_TEXTURE_2D = GLES20._f_GL_TEXTURE_2D
+GL_TEXTURE_MIN_FILTER = GLES20._f_GL_TEXTURE_MIN_FILTER
+GL_TEXTURE_MAG_FILTER = GLES20._f_GL_TEXTURE_MAG_FILTER
+GL_LINEAR = GLES20._f_GL_LINEAR
+
+glActiveTexture = GLES20._mw_glActiveTexture(20) # texture
+GL_TEXTURE0 = GLES20._f_GL_TEXTURE0
+
+def newTexture(ctxResources, resId):
+  bitmap = BitmapFactory._m_decodeResource(ctxResources, resId, bitmapFactoryOptions)
+  W, H = bitmap._m_getWidth(), bitmap._m_getHeight()
+  pixels = INT.new_array(W * H)
+  bitmap._m_getPixels(pixels, 0, W, 0, 0, W, H) # pixels, offset, stride, x, y, width, height
+  byteCount = bitmap._m_getByteCount()
+  bitmap._m_recycle()
+  buffer = IntBuffer(pixels, True)
+
+  ids = INT.new_array(1)
+  glGenTextures(1, ids, 0)
+  textureId = ids[0]
+
+  glBindTexture(GL_TEXTURE_2D, textureId)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer.fb)
+
+  return textureId
+
 def mainProgram():
   program = newProgram("""
-attribute vec4 vPosition;
+attribute vec3 vPosition;
 attribute vec4 vColor;
-uniform mat4 uMVPMatrix; 
+attribute vec2 vUV;
+
+uniform mat4 uMVPMatrix;
+
 varying vec4 vaColor;
+varying vec2 vaUV;
+
 void main() {
-  gl_Position = uMVPMatrix * vPosition;
+  gl_Position = uMVPMatrix * vec4(vPosition.xyz, 1);
   vaColor = vColor;
+  vaUV = vUV;
 }
 """, """
 precision mediump float;
+
+uniform sampler2D uTexture;
+
 varying vec4 vaColor;
+varying vec2 vaUV;
+
 void main() {
-  gl_FragColor = vaColor;
+  if (vaUV.x < 0.) gl_FragColor = vaColor;
+  else gl_FragColor = texture2D(uTexture, vaUV);
 }
-""", ('vPosition', 'vColor'), ('uMVPMatrix',))
+""", ('vPosition', 'vColor', 'vUV'), ('uMVPMatrix', 'uTexture'))
   if type(program) is str:
-    print("shader program error:")
+    print("💥 shader program error:")
     print(program)
     exit()
-  print("OK shader program:", program)
+  print("✅ OK shader program:", program)
   return program
 
 def figures():
@@ -238,31 +297,36 @@ def figures():
   ratio2 = ratio * 0.6
 
   VBOdata = FloatBuffer((
-      0,  ratio, 4, 1, 0, 0, 1,
-     -2, -ratio, 4, 0, 1, 0, 1,
-      2, -ratio, 4, 0, 0, 1, 1,
-   -1.6,  ratio, 4, 1, 1, 0, 1,
-   -1.2, ratio2, 4, 1, 0, 1, 1,
-     -2, ratio2, 4, 0, 1, 1, 1,
-   -1.2,  ratio, 4, 0, 0, 0, 0,
-     -1, -1, -1,    1, 1, 1, 1, #  7
-      1, -1, -1,    1, 0, 0, 1, #  8
-      1, -1,  1,    1, 1, 0, 1, #  9
-     -1, -1,  1,    0, 0, 1, 1, # 10
-     -1,  1, -1,    0, 1, 0, 1, # 11
-      1,  1, -1,    0, 1, 1, 1, # 12
-      1,  1,  1,    0, 0, 0, 0, # 13
-     -1,  1,  1,    1, 0, 1, 1, # 14
+      0,  ratio, 4, 1, 0, 0, 1, -1, -1,
+     -2, -ratio, 4, 0, 1, 0, 1, -1, -1,
+      2, -ratio, 4, 0, 0, 1, 1, -1, -1,
+   -1.6,  ratio, 4, 1, 1, 0, 1, -1, -1,
+   -1.2, ratio2, 4, 1, 0, 1, 1, -1, -1,
+     -2, ratio2, 4, 0, 1, 1, 1, -1, -1,
+   -1.2,  ratio, 4, 0, 0, 0, 0, -1, -1,
+     -1, -1, -1,    1, 1, 1, 1, -1, -1, #  7
+      1, -1, -1,    1, 0, 0, 1, -1, -1, #  8
+      1, -1,  1,    1, 1, 0, 1, -1, -1, #  9
+     -1, -1,  1,    0, 0, 1, 1, -1, -1, # 10
+     -1,  1, -1,    0, 1, 0, 1, -1, -1, # 11
+      1,  1, -1,    0, 1, 1, 1, -1, -1, # 12
+      1,  1,  1,    0, 0, 0, 0, -1, -1, # 13
+     -1,  1,  1,    1, 0, 1, 1, -1, -1, # 14
+     -1, -1, -1,    1, 1, 1, 1,  1, 2/8, # 15
+      1, -1, -1,    1, 0, 0, 1,  0, 2/8, # 16
+     -1,  1, -1,    0, 1, 0, 1,  1, 1/8, # 17
+      1,  1, -1,    0, 1, 1, 1,  0, 1/8, # 18
   )) # 3d-координаты и раскраска вершин
   IBOdata = IntBuffer((
      0,  1,  2,  5,  4,  3, 0, 4, 6, # старые 3 треугольника
      7,  8,  9,  7,  9, 10, # дно куба
-     7,  8, 11,  8, 11, 12, # фронт
+   # 7,  8, 11,  8, 11, 12, # фронт
+    15, 16, 17, 16, 17, 18, # фронт
      8,  9, 12,  9, 12, 13, # правый бок
-     9, 10, 13, 10, 13, 14, # тыл
+     9, 10, 14,  9, 13, 14, # тыл
     10,  7, 14,  7, 14, 11, # левый бок
-    11, 12, 13, 11, 13, 14, # верх куба
-  )) # в будущем это будут сами полигоны = сетка, 3d-нормали и 2d-UV вершин
+    11, 12, 14, 12, 14, 13, # верх куба
+  )) # сами полигоны = сетка, 2d-UV вершин
 
   glBindBuffer(GL_ARRAY_BUFFER, VBO)
   glBufferData(GL_ARRAY_BUFFER, VBOdata.capacity() * 4, VBOdata.fb, GL_STATIC_DRAW)
@@ -272,7 +336,7 @@ def figures():
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, IBOdata.capacity() * 4, IBOdata.fb, GL_STATIC_DRAW)
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
-  print("OK buffers:", VBO, IBO)
+  print("✅ OK buffers:", VBO, IBO)
   return VBO, IBO, IBOdata.capacity()
 
   """
@@ -315,7 +379,7 @@ def Activity():
       self.frames = self.last_frames = 0
       self.last_time = time() + 0.1
       self.frame_pos = 0
-      self.frame_arr = None
+      self.frame_arr = []
       self.fpsS = "?"
       self.yaw = self.pitch = self.roll = 0
 
@@ -326,12 +390,12 @@ def Activity():
         self.last_time = T + 0.1
         fd = self.frames - self.last_frames
         self.last_frames = self.frames
-        self.frame_pos = pos = (self.frame_pos + 1) % 10
-        if arr is None: self.frame_arr = arr = [fd] * 10
-        else: arr[pos] = fd
-        S = 0
-        for i in arr: S += i
-        self.fpsS = S
+        if len(arr) < 10: self.frame_arr.append(fd)
+        else:
+          pos = self.frame_pos
+          arr[pos] = fd
+          self.frame_pos = (pos + 1) % 10
+        self.fpsS = S = sum(arr) * 10 // len(arr)
         print(S)
       return self.fpsS
 
@@ -352,6 +416,14 @@ def Activity():
 
       setIdentityM(modelM, 0)
       self.calcViewMatrix()
+
+      textures = rm.get("drawable/textures")
+      textureId = newTexture(ctxResources, textures)
+      print("textures:", hex(textures), textureId)
+      
+      glUniform1i(uniforms["uTexture"], 0);
+      glActiveTexture(GL_TEXTURE0)
+      glBindTexture(GL_TEXTURE_2D, textureId)
 
     def onSurfaceChanged(self, gl10, width, height):
       print("📽️ onSurfaceChanged", gl10, width, height)
@@ -394,15 +466,18 @@ def Activity():
       program, attribs, uniforms = self.program
       vPosition = attribs["vPosition"]
       vColor    = attribs["vColor"]
+      vUV       = attribs["vUV"]
       VBO, IBO, indexes = self.buffers
 
       glEnableVertexAttribArray(vPosition)
       glEnableVertexAttribArray(vColor)
+      glEnableVertexAttribArray(vUV)
       glBindBuffer(GL_ARRAY_BUFFER, VBO)
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO)
 
-      glVertexAttribPointer(vPosition, 3, GL_FLOAT, False, 7 * 4, 0)
-      glVertexAttribPointer(vColor,    4, GL_FLOAT, False, 7 * 4, 3 * 4)
+      glVertexAttribPointer(vPosition, 3, GL_FLOAT, False, 9 * 4, 0)
+      glVertexAttribPointer(vColor,    4, GL_FLOAT, False, 9 * 4, 3 * 4)
+      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 9 * 4, 7 * 4)
       glDrawElements(GL_TRIANGLES, indexes, GL_UNSIGNED_INT, 0)
       self.fps()
 
@@ -410,6 +485,7 @@ def Activity():
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
       glDisableVertexAttribArray(vPosition)
       glDisableVertexAttribArray(vColor)
+      glDisableVertexAttribArray(vUV)
 
     def move(self, dx, dy):
       self.yaw -= dx * 0.5
@@ -488,9 +564,11 @@ def Activity():
 
   rm = ResourceManager()
   rm.xml("main", "main.xml", main_xml)
+  rm.drawable("textures", "textures.png", __resource("textures.png"))
   #print("•", rm)
   ress = rm.release()
   ctx = ress.ctx
+  ctxResources = ctx._m_getResources()
   #print("•", ress, ctx)
 
   activityManager = ctx._m_getSystemService(ACTIVITY_SERVICE)
