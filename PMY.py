@@ -12,7 +12,7 @@ import myGL
 
 
 def mainProgram():
-  program = newProgram("""
+  return checkProgram(newProgram("""
 attribute vec3 vPosition;
 attribute vec4 vColor;
 attribute vec2 vUV;
@@ -39,13 +39,80 @@ void main() {
   if (vaUV.x < 0.) gl_FragColor = vaColor;
   else gl_FragColor = texture2D(uTexture, vaUV).bgra;
 }
-""", ('vPosition', 'vColor', 'vUV'), ('uMVPMatrix', 'uTexture'))
-  if type(program) is str:
-    print("💥 shader program error:")
-    print(program)
-    exit()
-  print("✅ OK shader program:", program)
-  return program
+""", ('vPosition', 'vColor', 'vUV'), ('uMVPMatrix', 'uTexture')))
+
+
+
+class d2textureProgram():
+  def __init__(self):
+    self.program = program = checkProgram(newProgram("""
+attribute vec2 vPosition;
+attribute vec2 vUV;
+attribute float vType;
+
+uniform float uAspect;
+
+varying vec2 vaUV;
+varying float vaType;
+
+void main() {
+  gl_Position = vec4(vPosition.x, vPosition.y * uAspect - uAspect, 1, 1);
+  vaUV = vUV;
+  vaType = vType;
+}
+    """, """
+precision mediump float;
+
+varying vec2 vaUV;
+varying float vaType;
+
+uniform sampler2D uTexture;
+uniform int uEvent;
+
+void main() {
+	 int b2 = uEvent / 2;
+	 int b1 = uEvent - b2 * 2;
+	 float X = 1.;
+  if (vaType == 1. && b1 > 0 || vaType == 2. && b2 > 0) X = 0.5;
+  vec4 clr = texture2D(uTexture, vaUV).bgra;
+  gl_FragColor = vec4(clr.rgb * X, clr.a);
+}
+    """, ('vPosition', 'vUV', 'vType'), ('uTexture', 'uAspect', 'uEvent')))
+    uniforms = program[2]
+    self.uTexture = uniforms["uTexture"]
+    self.uAspect = uniforms["uAspect"]
+    self.uEvent = uniforms["uEvent"]
+    self.models = []
+    self.add(160, 0.25, 5.5, 8, 1)
+    self.add(142, 0.25, 6.75, 8, 2)
+
+  def add(self, id, posX, posY, L = 10, t = 0):
+    L //= 2
+    L1 = L - 1
+    pLx, pRx, pLy, pRy = (posX - L) / L, (posX - L1) / L, (posY - L) / -L, (posY - L1) / -L
+    y, x = divmod(id, 8)
+    Lx, Rx, Ly, Ry = x / 8, (x + 1) / 8, y / 64, (y + 1) / 64
+    model = Model((
+      pLx, pLy, Lx, Ly, t,
+      pRx, pLy, Rx, Ly, t,
+      pRx, pRy, Rx, Ry, t,
+      pLx, pRy, Lx, Ry, t,
+    ), (
+      0, 1, 2, 0, 2, 3,
+    ))
+    self.models.append(model)
+
+  def draw(self, aspect, eventN):
+    def func():
+      glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 5 * 4, 0)
+      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 5 * 4, 2 * 4)
+      glVertexAttribPointer(vType,     1, GL_FLOAT, False, 5 * 4, 4 * 4)
+    enableProgram(self.program)
+    attribs = self.program[1]
+    vPosition, vUV, vType = attribs["vPosition"], attribs["vUV"], attribs["vType"]
+    glUniform1f(self.uAspect, aspect)
+    glUniform1i(self.uEvent, eventN)
+    for model in self.models: model.draw(func)
 
 
 
@@ -118,6 +185,7 @@ class myRenderer:
     self.frame_arr = []
     self.fpsS = "?"
     self.yaw = self.pitch = self.roll = 0
+    self.eventN = 0
 
   def fps(self):
     T = time()
@@ -144,8 +212,6 @@ class myRenderer:
     #glUniform4f(uniforms["vColor"], 0, 0, 1, 1)
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-    glEnable(GL_DEPTH_TEST)
-    glEnable(GL_CULL_FACE)
 
     self.modelM = modelM = FLOAT.new_array(16)
     self.viewM = FLOAT.new_array(16)
@@ -159,14 +225,18 @@ class myRenderer:
     textureId = newTexture(ctxResources, textures)
     print("textures:", hex(textures), textureId)
 
-    glUniform1i(uniforms["uTexture"], 0);
     glActiveTexture(GL_TEXTURE0)
     glBindTexture(GL_TEXTURE_2D, textureId)
+
+    self.program2 = prog2 = d2textureProgram()
+
+    glUniform1i(uniforms["uTexture"], 0)
+    glUniform1i(prog2.uTexture, 0)
 
   def onSurfaceChanged(self, gl10, width, height):
     print("📽️ onSurfaceChanged", gl10, width, height)
     glViewport(0, 0, width, height)
-    self.W, self.H, self.WH_ratio = width, height, width / height
+    self.WHAspect = self.W, self.H, self.WH_ratio = width, height, width / height
     self.models = figures()
 
     perspectiveM(self.projectionM, 0, 90, self.WH_ratio, 0.01, 1000)
@@ -177,9 +247,7 @@ class myRenderer:
     multiplyMM(MVPmatrix, 0, self.projectionM, 0, self.viewM, 0)
     multiplyMM(MVPmatrix, 0, MVPmatrix, 0, self.modelM, 0)
     # print("MVP:", self.MVPmatrix[:])
-    uniforms = self.program[2]
-    glUniformMatrix4fv(uniforms["uMVPMatrix"], 1, False, MVPmatrix, 0)
-    self.updMVP = True
+    self.updMVP = False
 
   def calcViewMatrix(self):
     viewM = self.viewM
@@ -201,13 +269,28 @@ class myRenderer:
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     if self.updMVP: self.calcMVPmatrix()
 
+    glEnable(GL_DEPTH_TEST)
+    glEnable(GL_CULL_FACE)
+
+    program = self.program
+    enableProgram(program)
+    glUniformMatrix4fv(program[2]["uMVPMatrix"], 1, False, self.MVPmatrix, 0)
+
     for model in self.models: model.draw()
-    self.fps()
+
+    glDisable(GL_DEPTH_TEST)
+    glDisable(GL_CULL_FACE)
+    self.program2.draw(self.WH_ratio, self.eventN)
+
+    #self.fps()
 
   def move(self, dx, dy):
     self.yaw -= dx * 0.5
     self.pitch = max(-89, min(self.pitch - dy * 0.5, 89))
     self.calcViewMatrix()
+
+  def event(self, up, down):
+    self.eventN = up | down * 2
 
   reverse = {
     "cr": onSurfaceCreated,
@@ -237,6 +320,9 @@ class activityHandler:
     self.viewResume = view._mw_onResume()
     self.viewPause = view._mw_onPause()
     self.renderer = renderer
+    self.prevXY = {}
+    self.eventA = set()
+    self.eventB = set()
 
     return True # lock setContentView
 
@@ -252,13 +338,39 @@ class activityHandler:
   def onDestroy(self): print("onDestroy")
   def onTouchEvent(self, e):
     action = e._m_getAction()
-    if action == ACTION_DOWN:
-      x, y = e._m_getX(), e._m_getY()
-      self.prevX, self.prevY = x, y
+    getX = e._mw_getX(int)
+    getY = e._mw_getY(int)
+    getPointerId = e._mw_getPointerId(int)
+    prevXY, renderer = self.prevXY, self.renderer
+    actionN = action >> 8
+    action &= 255
+    W32 = renderer.W / 32
+    W5_5, W6 = W32 * 5.5, W32 * 6
+    H8 = renderer.H - W5_5
+    H8b = H8 - W5_5
+    if action in ACTION_DOWN:
+      x, y, id = getX(actionN), getY(actionN), getPointerId(actionN)
+      if x < W6 and y > H8b:
+        prevXY[id] = None
+        if y > H8: self.eventB.add(id)
+        else: self.eventA.add(id)
+        renderer.event(bool(self.eventA), bool(self.eventB))
+      else: prevXY[id] = x, y
     elif action == ACTION_MOVE:
-      x, y = e._m_getX(), e._m_getY()
-      self.renderer.move(x - self.prevX, y - self.prevY)
-      self.prevX, self.prevY = x, y
+      for p in range(e._m_getPointerCount()):
+        x, y, id = getX(p), getY(p), getPointerId(p)
+        prevv = prevXY[id]
+        if prevv is None: continue
+        prevX, prevY = prevv
+        prevXY[id] = x, y
+        self.renderer.move(x - prevX, y - prevY)
+    elif action in ACTION_UP:
+      id = getPointerId(actionN)
+      prevXY[id] = 0, 0
+      self.eventA.remove(id)
+      self.eventB.remove(id)
+      renderer.event(bool(self.eventA), bool(self.eventB))
+      # del prevXY[id] :/
     return True
   def onKeyDown(self, num, e):
     print("onKeyDown", num, e)

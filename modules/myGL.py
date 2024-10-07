@@ -29,9 +29,9 @@ FLOATarr = ()._a_float
 ACTIVITY_SERVICE = Context._f_ACTIVITY_SERVICE
 FEATURE_NO_TITLE = Window._f_FEATURE_NO_TITLE
 FLAG_FULLSCREEN = WindowManagerLayoutParams._f_FLAG_FULLSCREEN
-ACTION_DOWN = MotionEvent._f_ACTION_DOWN
+ACTION_DOWN = MotionEvent._f_ACTION_DOWN, MotionEvent._f_ACTION_POINTER_DOWN
 ACTION_MOVE = MotionEvent._f_ACTION_MOVE
-ACTION_UP = MotionEvent._f_ACTION_UP
+ACTION_UP = MotionEvent._f_ACTION_UP, MotionEvent._f_ACTION_POINTER_UP
 
 #for f in GLES20.fields(): print(f)
 #GL_QUAD_STRIP = GL10._f_GL_QUAD_STRIP
@@ -89,6 +89,9 @@ glGetAttribLocation = GLES20._mw_glGetAttribLocation(int, str) # program, name
 glGetUniformLocation = GLES20._mw_glGetUniformLocation(int, str) # program, name
 glGetError = GLES20._mw_glGetError()
 glUniform1i = GLES20._mw_glUniform1i(int, int) # location, x
+glUniform1f = GLES20._mw_glUniform1f(int, float) # location, x
+glUniform2f = GLES20._mw_glUniform2f(int, float, float) # location, x, y
+glUniform3f = GLES20._mw_glUniform3f(int, float, float, float) # location, x, y, z
 glUniform4f = GLES20._mw_glUniform4f(int, float, float, float, float) # location, x, y, z, w
 glUniformMatrix4fv = GLES20._mw_glUniformMatrix4fv(int, int, bool, FLOATarr, int) # location, count, transpose, value, offset
 
@@ -125,7 +128,8 @@ glTexImage2D = GLES20._mw_glTexImage2D(int, int, int, int, int, int, int, int, N
 GL_TEXTURE_2D = GLES20._f_GL_TEXTURE_2D
 GL_TEXTURE_MIN_FILTER = GLES20._f_GL_TEXTURE_MIN_FILTER
 GL_TEXTURE_MAG_FILTER = GLES20._f_GL_TEXTURE_MAG_FILTER
-GL_LINEAR = GLES20._f_GL_LINEAR
+GL_NEAREST = GLES20._f_GL_NEAREST # фильтр ближайшено соседа, как в майнкрафте, как нам и надо ;"-}
+GL_LINEAR = GLES20._f_GL_LINEAR # линейная фильтрация (мыло)
 
 glActiveTexture = GLES20._mw_glActiveTexture(20) # texture
 GL_TEXTURE0 = GLES20._f_GL_TEXTURE0
@@ -195,7 +199,6 @@ def newProgram(vCode, fCode, attribs, uniforms):
 
   glDeleteShader(vShader)
   glDeleteShader(fShader)
-  glUseProgram(program)
 
   attribLocs = {}
   for name in attribs:
@@ -206,7 +209,6 @@ def newProgram(vCode, fCode, attribs, uniforms):
     if loc < 0:
       return "attribute %r not found: %s" % (name, loc)
     attribLocs[name] = loc
-    glEnableVertexAttribArray(loc)
 
   uniformLocs = {}
   for name in uniforms:
@@ -218,6 +220,27 @@ def newProgram(vCode, fCode, attribs, uniforms):
       return "uniform %r not found: %s" % (name, loc)
     uniformLocs[name] = loc
 
+  return program, attribLocs, uniformLocs
+
+def checkProgram(program):
+  if type(program) is str:
+    print("💥 shader program error:")
+    print(program)
+    exit()
+  print("✅ OK shader program:", program)
+  return program
+
+prevLocs = None
+def enableProgram(program):
+  global prevLocs
+  program, attribs, uniforms = program
+  locs = tuple(attribs.values())
+  if prevLocs is not None:
+    for loc in prevLocs: glDisableVertexAttribArray(loc)
+  glUseProgram(program)
+  for loc in locs: glEnableVertexAttribArray(loc)
+  prevLocs = locs
+
   # утерян смысл в следующих строках:
   #glEnableVertexAttribArray(vPosition)
   #glEnableVertexAttribArray(vColor)
@@ -226,8 +249,6 @@ def newProgram(vCode, fCode, attribs, uniforms):
   #glDisableVertexAttribArray(vPosition)
   #glDisableVertexAttribArray(vColor)
   #glDisableVertexAttribArray(vUV)
-
-  return program, attribLocs, uniformLocs
 
 
 
@@ -251,8 +272,8 @@ def newTexture(ctxResources, resId):
   textureId = ids[0]
 
   glBindTexture(GL_TEXTURE_2D, textureId)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer.fb)
 
   return textureId
@@ -287,15 +308,17 @@ class Model:
     print("✅ OK buffers:", VBO, IBO)
     self.data = VBO, IBO, IBOdata.capacity()
 
-  def draw(self):
+  def draw(self, func = None):
     VBO, IBO, indexes = self.data
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO)
 
-    glVertexAttribPointer(Model.vPosition, 3, GL_FLOAT, False, 9 * 4, 0)
-    glVertexAttribPointer(Model.vColor,    4, GL_FLOAT, False, 9 * 4, 3 * 4)
-    glVertexAttribPointer(Model.vUV,       2, GL_FLOAT, False, 9 * 4, 7 * 4)
+    if func is None:
+      glVertexAttribPointer(Model.vPosition, 3, GL_FLOAT, False, 9 * 4, 0)
+      glVertexAttribPointer(Model.vColor,    4, GL_FLOAT, False, 9 * 4, 3 * 4)
+      glVertexAttribPointer(Model.vUV,       2, GL_FLOAT, False, 9 * 4, 7 * 4)
+    else: func()
 
     glDrawElements(GL_TRIANGLES, indexes, GL_UNSIGNED_INT, 0)
     #glBindBuffer(GL_ARRAY_BUFFER, 0)
