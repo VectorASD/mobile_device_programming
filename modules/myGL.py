@@ -121,6 +121,9 @@ perspectiveM = Matrix._mw_perspectiveM(FLOATarr, int, float, float, float, float
 setLookAtM = Matrix._mw_setLookAtM(FLOATarr, int, float, float, float, float, float, float, float, float, float) # rm, rmOffset, eyeX, eyeY, eyeZ, centerX, centerY, centerZ, upX, upY, upZ
 setIdentityM = Matrix._mw_setIdentityM(FLOATarr, int) # sm, smOffset
 multiplyMM = Matrix._mw_multiplyMM(FLOATarr, int, FLOATarr, int, FLOATarr, int) # result, resultOffset, lhs, lhsOffset, rhs, rhsOffset
+multiplyMV = Matrix._mw_multiplyMV(FLOATarr, int, FLOATarr, int, FLOATarr, int) # resultVec, resultVecOffset, lhsMat, lhsMatOffset, rhsVec, rhsVecOffset
+transposeM = Matrix._mw_transposeM(FLOATarr, int, FLOATarr, int) # mTrans, mTransOffset, m, mOffset
+translateM = Matrix._mw_translateM(FLOATarr, int, float, float, float) # m, mOffset, x, y, z
 
 glBindTexture = GLES20._mw_glBindTexture(int, int)
 glTexParameteri = GLES20._mw_glTexParameteri(int, int, int)
@@ -277,49 +280,3 @@ def newTexture(ctxResources, resId):
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer.fb)
 
   return textureId
-
-
-
-class Model:
-  vPosition = vColor = vUV = None
-  def calcAttribs(attribs):
-    Model.vPosition = attribs["vPosition"]
-    Model.vColor    = attribs["vColor"]
-    Model.vUV       = attribs["vUV"]
-
-  def __init__(self, VBOdata, IBOdata):
-    buffers = INT.new_array(2)
-    glGenBuffers(2, buffers, 0)
-    VBO, IBO = buffers
-
-    # 3d-координаты, раскраска вершин и 2d-UV вершин
-    VBOdata = FloatBuffer(VBOdata)
-    # сами полигоны = сетка
-    IBOdata = IntBuffer(IBOdata)
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO)
-    glBufferData(GL_ARRAY_BUFFER, VBOdata.capacity() * 4, VBOdata.fb, GL_STATIC_DRAW)
-    glBindBuffer(GL_ARRAY_BUFFER, 0)
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO)
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, IBOdata.capacity() * 4, IBOdata.fb, GL_STATIC_DRAW)
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
-
-    print("✅ OK buffers:", VBO, IBO)
-    self.data = VBO, IBO, IBOdata.capacity()
-
-  def draw(self, func = None):
-    VBO, IBO, indexes = self.data
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO)
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO)
-
-    if func is None:
-      glVertexAttribPointer(Model.vPosition, 3, GL_FLOAT, False, 9 * 4, 0)
-      glVertexAttribPointer(Model.vColor,    4, GL_FLOAT, False, 9 * 4, 3 * 4)
-      glVertexAttribPointer(Model.vUV,       2, GL_FLOAT, False, 9 * 4, 7 * 4)
-    else: func()
-
-    glDrawElements(GL_TRIANGLES, indexes, GL_UNSIGNED_INT, 0)
-    #glBindBuffer(GL_ARRAY_BUFFER, 0)
-    #glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)

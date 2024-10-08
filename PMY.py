@@ -8,6 +8,7 @@ if True: # __name__ == "__main__":
 ###~~~### pmy
 
 import myGL
+import myGLclasses
 
 
 
@@ -184,8 +185,10 @@ class myRenderer:
     self.frame_pos = 0
     self.frame_arr = []
     self.fpsS = "?"
-    self.yaw = self.pitch = self.roll = 0
+    self.yaw, self.pitch, self.roll = 180, 0, 0
+    self.camX, self.camY, self.camZ = 0, 0, -3.5
     self.eventN = 0
+    self.time, self.td = time(), 0
 
   def fps(self):
     T = time()
@@ -250,27 +253,45 @@ class myRenderer:
     self.updMVP = False
 
   def calcViewMatrix(self):
-    viewM = self.viewM
     yaw = self.yaw * PI180
     pitch = self.pitch * PI180
-    sYaw, cYaw = sin(yaw), cos(yaw)
-    sPitch, cPitch = sin(pitch), cos(pitch)
-    R = -3.5
-    setLookAtM(viewM, 0,
-      sYaw * cPitch * R, sPitch * R, cYaw * cPitch * R, # eye
-      0, 0, 0, # center
-      0, 1, 0, # up
-    )
+    roll = self.roll * PI180
+
+    q = Quaternion.fromYPR(yaw, pitch, roll)
+    q2 = q.conjugated()
+    mat = q2.toMatrix()
+
+    translateM(mat, 0, -self.camX, -self.camY, -self.camZ)
+
+    self.viewM = mat
     self.updMVP = True
+    self.forward = q.rotatedVector(0, 0, -1)
+
+  def eventHandler(self):
+    td, event = self.td, self.eventN
+    if event in (1, 2):
+      if event == 2: td = -td
+      x, y, z = self.forward
+      td *= 3
+      self.camX += x * td
+      self.camY += y * td
+      self.camZ += z * td
+      self.calcViewMatrix()
 
   def onDrawFrame(self, gl10):
     self.frames += 1
+    T = time()
+    self.td = T - self.time
+    self.time = T
     #print("📽️ onDraw", gl)
+
+    self.eventHandler()
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     if self.updMVP: self.calcMVPmatrix()
 
     glEnable(GL_DEPTH_TEST)
-    glEnable(GL_CULL_FACE)
+    #glEnable(GL_CULL_FACE)
 
     program = self.program
     enableProgram(program)
@@ -286,7 +307,7 @@ class myRenderer:
 
   def move(self, dx, dy):
     self.yaw -= dx * 0.5
-    self.pitch = max(-89, min(self.pitch - dy * 0.5, 89))
+    self.pitch = max(-90, min(self.pitch - dy * 0.5, 90))
     self.calcViewMatrix()
 
   def event(self, up, down):
