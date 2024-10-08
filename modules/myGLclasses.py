@@ -27,7 +27,7 @@ class Model:
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, IBOdata.capacity() * 4, IBOdata.fb, GL_STATIC_DRAW)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
-    print("✅ OK buffers:", VBO, IBO)
+    print2("✅ OK buffers:", VBO, IBO)
     self.data = VBO, IBO, IBOdata.capacity()
 
   def draw(self, func = None):

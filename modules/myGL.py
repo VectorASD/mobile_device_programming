@@ -32,6 +32,7 @@ FLAG_FULLSCREEN = WindowManagerLayoutParams._f_FLAG_FULLSCREEN
 ACTION_DOWN = MotionEvent._f_ACTION_DOWN, MotionEvent._f_ACTION_POINTER_DOWN
 ACTION_MOVE = MotionEvent._f_ACTION_MOVE
 ACTION_UP = MotionEvent._f_ACTION_UP, MotionEvent._f_ACTION_POINTER_UP
+ACTION_CANCEL = MotionEvent._f_ACTION_CANCEL
 
 #for f in GLES20.fields(): print(f)
 #GL_QUAD_STRIP = GL10._f_GL_QUAD_STRIP
@@ -54,10 +55,16 @@ GL_NO_ERROR = GLES20._f_GL_NO_ERROR
 GL_FLOAT = GLES20._f_GL_FLOAT
 GL_UNSIGNED_BYTE = GLES20._f_GL_UNSIGNED_BYTE
 GL_UNSIGNED_INT = GLES20._f_GL_UNSIGNED_INT
+GL_RGB = GLES20._f_GL_RGB
 GL_RGBA = GLES20._f_GL_RGBA
+# GL_DEPTH24_STENCIL8 = GLES20._f_GL_DEPTH24_STENCIL8 опять бортанули в этой OpenGL ES... зато появились следующие две строчки
+GL_DEPTH_COMPONENT16 = GLES20._f_GL_DEPTH_COMPONENT16
+GL_STENCIL_INDEX8 = GLES20._f_GL_STENCIL_INDEX8
 
 GL_ARRAY_BUFFER = GLES20._f_GL_ARRAY_BUFFER
 GL_ELEMENT_ARRAY_BUFFER = GLES20._f_GL_ELEMENT_ARRAY_BUFFER
+GL_FRAMEBUFFER = GLES20._f_GL_FRAMEBUFFER
+GL_RENDERBUFFER = GLES20._f_GL_RENDERBUFFER
 GL_STATIC_DRAW = GLES20._f_GL_STATIC_DRAW
 
 
@@ -189,6 +196,8 @@ def newProgram(vCode, fCode, attribs, uniforms):
   fShader = newShader(GL_FRAGMENT_SHADER, fCode)
   if type(fShader) is str: return "Ошибка компиляции F-шейдера: " + fShader
 
+  print2("✅ OK shaders:", vShader, fShader)
+
   program = glCreateProgram()
   glAttachShader(program, vShader)
   glAttachShader(program, fShader)
@@ -227,10 +236,10 @@ def newProgram(vCode, fCode, attribs, uniforms):
 
 def checkProgram(program):
   if type(program) is str:
-    print("💥 shader program error:")
+    print2("💥 shader program error:")
     print(program)
     exit()
-  print("✅ OK shader program:", program)
+  print2("✅ OK shader program:", program)
   return program
 
 prevLocs = None
@@ -278,5 +287,81 @@ def newTexture(ctxResources, resId):
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer.fb)
+  glBindTexture(GL_TEXTURE_2D, 0)
 
+  print2("✅ OK texture:", textureId)
   return textureId
+
+
+
+glGenFramebuffers = GLES20._mw_glGenFramebuffers(int, INTarr, int) # n, framebuffers, offset
+glGenRenderbuffers = GLES20._mw_glGenRenderbuffers(int, INTarr, int) # n, renderbuffers, offset
+glBindFramebuffer = GLES20._mw_glBindFramebuffer(int, int) # target, framebuffer
+glBindRenderbuffer = GLES20._mw_glBindRenderbuffer(int, int) # target, framebuffer
+glFramebufferTexture2D = GLES20._mw_glFramebufferTexture2D(int, int, int, int, int) # target, attachment, textarget, texture, level
+glFramebufferRenderbuffer = GLES20._mw_glFramebufferRenderbuffer(int, int, int, int) # target, attachment, renderbuffertarget, renderbuffer
+
+glCheckFramebufferStatus = GLES20._mw_glCheckFramebufferStatus(int) # target
+glRenderbufferStorage = GLES20._mw_glRenderbufferStorage(int, int, int, int) # target, internalformat, width, height
+
+GL_FRAMEBUFFER_COMPLETE = GLES20._f_GL_FRAMEBUFFER_COMPLETE
+GL_COLOR_ATTACHMENT0 = GLES20._f_GL_COLOR_ATTACHMENT0
+# GL_DEPTH_STENCIL_ATTACHMENT = GLES20._f_GL_DEPTH_STENCIL_ATTACHMENT
+GL_DEPTH_ATTACHMENT = GLES20._f_GL_DEPTH_ATTACHMENT
+GL_STENCIL_ATTACHMENT = GLES20._f_GL_STENCIL_ATTACHMENT
+
+GLES20_fields = GLES20.fields()
+GL_errors = {}
+for k, v in GLES20_fields.items():
+  try: GL_errors[v] += "|" + k
+  except KeyError: GL_errors[v] = k
+# GL_errors[0] = "ZERO_ERROR"
+
+def checkGLError():
+  err = glGetError()
+  if err != GL_NO_ERROR: print2("🔥 glError:", err, "(%s)" % GL_errors[err])
+  else: print2("gl ok")
+
+def checkFrameBuffer():
+  status = glCheckFramebufferStatus(GL_FRAMEBUFFER)
+  if status != GL_FRAMEBUFFER_COMPLETE:
+    print2("💥 FBO error:", status, "(%s)" % GL_errors[status])
+    # exit()
+  else: print2("✅ FBO ok")
+
+def newFrameBuffer(width, height):
+  arr = INT.new_array(4)
+  glGenFramebuffers(1, arr, 0)
+  glGenTextures(1, arr, 1)
+  glGenRenderbuffers(1, arr, 2)
+  glGenRenderbuffers(1, arr, 3)
+  fbo, textureId, rbo, rbo2 = arr
+
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo)
+
+  glBindTexture(GL_TEXTURE_2D, textureId)
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, None)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+  glBindTexture(GL_TEXTURE_2D, 0)
+
+  glBindRenderbuffer(GL_RENDERBUFFER, rbo)
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height)
+
+  glBindRenderbuffer(GL_RENDERBUFFER, rbo2)
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, width, height)
+  glBindRenderbuffer(GL_RENDERBUFFER, 0)
+
+  # checkFrameBuffer() нет аттачментов
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureId, 0)
+  # checkFrameBuffer() ok
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo)
+  # checkFrameBuffer() ok
+  # трафарет (при том не нужный мне 🗿) отваливается с ошибкой GL_FRAMEBUFFER_UNSUPPORTED
+  #glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo2)
+  checkFrameBuffer()
+ 
+  print2("🥳 FBO!", fbo, textureId, rbo, rbo2)
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0)
+  return arr

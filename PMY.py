@@ -142,10 +142,10 @@ def figures():
      1,  1, -1,   0, 1, 1, 1,   -1, -1, #  5
      1,  1,  1,   0, 0, 0, 0,   -1, -1, #  6
     -1,  1,  1,   1, 0, 1, 1,   -1, -1, #  7
-    -1, -1, -1,   1, 1, 1, 1,    1, 2/8, # 8
-     1, -1, -1,   1, 0, 0, 1,    0, 2/8, # 9
-    -1,  1, -1,   0, 1, 0, 1,    1, 1/8, # 10
-     1,  1, -1,   0, 1, 1, 1,    0, 1/8, # 11
+    -1, -1, -1,   1, 1, 1, 1,    1, 1, # 8
+     1, -1, -1,   1, 0, 0, 1,    0, 1, # 9
+    -1,  1, -1,   0, 1, 0, 1,    1, 0, # 10
+     1,  1, -1,   0, 1, 1, 1,    0, 0, # 11
   ), (
      0,  1,  2,  0,  2,  3, # дно куба
    # 0,  1,  4,  1,  4,  5, # фронт
@@ -215,6 +215,7 @@ class myRenderer:
     #glUniform4f(uniforms["vColor"], 0, 0, 1, 1)
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glActiveTexture(GL_TEXTURE0)
 
     self.modelM = modelM = FLOAT.new_array(16)
     self.viewM = FLOAT.new_array(16)
@@ -225,16 +226,14 @@ class myRenderer:
     self.calcViewMatrix()
 
     textures = rm.get("drawable/textures")
-    textureId = newTexture(ctxResources, textures)
-    print("textures:", hex(textures), textureId)
-
-    glActiveTexture(GL_TEXTURE0)
-    glBindTexture(GL_TEXTURE_2D, textureId)
+    self.mainTexture = newTexture(ctxResources, textures)
+    print("textures:", hex(textures), self.mainTexture)
 
     self.program2 = prog2 = d2textureProgram()
 
-    glUniform1i(uniforms["uTexture"], 0)
-    glUniform1i(prog2.uTexture, 0)
+    #checkGLError() TODO
+    #glUniform1i(prog2.uTexture, 0)
+    #checkGLError()
 
   def onSurfaceChanged(self, gl10, width, height):
     print("📽️ onSurfaceChanged", gl10, width, height)
@@ -244,6 +243,8 @@ class myRenderer:
 
     perspectiveM(self.projectionM, 0, 90, self.WH_ratio, 0.01, 1000)
     self.calcMVPmatrix()
+
+    self.FBO = newFrameBuffer(width, height)
 
   def calcMVPmatrix(self):
     MVPmatrix = self.MVPmatrix
@@ -278,6 +279,27 @@ class myRenderer:
       self.camZ += z * td
       self.calcViewMatrix()
 
+  def drawScene(self):
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+    glEnable(GL_DEPTH_TEST)
+    #glEnable(GL_CULL_FACE)
+
+    program = self.program
+    enableProgram(program)
+    #checkGLError() TODO
+    #glUniform1i(program[2]["uTexture"], 0)
+    #checkGLError()
+    glUniformMatrix4fv(program[2]["uMVPMatrix"], 1, False, self.MVPmatrix, 0)
+
+    glBindTexture(GL_TEXTURE_2D, self.FBO[1])
+    for model in self.models: model.draw()
+
+    glDisable(GL_DEPTH_TEST)
+    glDisable(GL_CULL_FACE)
+    glBindTexture(GL_TEXTURE_2D, self.mainTexture)
+    self.program2.draw(self.WH_ratio, self.eventN)
+
   def onDrawFrame(self, gl10):
     self.frames += 1
     T = time()
@@ -286,23 +308,13 @@ class myRenderer:
     #print("📽️ onDraw", gl)
 
     self.eventHandler()
-
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     if self.updMVP: self.calcMVPmatrix()
 
-    glEnable(GL_DEPTH_TEST)
-    #glEnable(GL_CULL_FACE)
+    glBindFramebuffer(GL_FRAMEBUFFER, self.FBO[0])
+    self.drawScene()
+    glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
-    program = self.program
-    enableProgram(program)
-    glUniformMatrix4fv(program[2]["uMVPMatrix"], 1, False, self.MVPmatrix, 0)
-
-    for model in self.models: model.draw()
-
-    glDisable(GL_DEPTH_TEST)
-    glDisable(GL_CULL_FACE)
-    self.program2.draw(self.WH_ratio, self.eventN)
-
+    self.drawScene()
     #self.fps()
 
   def move(self, dx, dy):
@@ -392,6 +404,9 @@ class activityHandler:
       self.eventB.remove(id)
       renderer.event(bool(self.eventA), bool(self.eventB))
       # del prevXY[id] :/
+    elif action == ACTION_CANCEL:
+      self.eventA.clear()
+      self.eventB.clear()
     return True
   def onKeyDown(self, num, e):
     print("onKeyDown", num, e)
