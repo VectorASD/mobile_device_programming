@@ -75,8 +75,10 @@ PI = Math._f_PI
 PI180 = PI / 180
 
 glClearColor = GLES20._mw_glClearColor(float, float, float, float)
-glViewport = GLES20._mw_glViewport(int, int, int, int)
 glClear = GLES20._mw_glClear(int)
+glViewport = GLES20._mw_glViewport(int, int, int, int)
+glGetIntegerv = GLES20._mw_glGetIntegerv(int, INTarr, int) # pname, params, offset
+GL_VIEWPORT = GLES20._f_GL_VIEWPORT
 
 glCreateShader = GLES20._mw_glCreateShader(int)
 glShaderSource = GLES20._mw_glShaderSource(int, str)
@@ -102,11 +104,22 @@ glUniform3f = GLES20._mw_glUniform3f(int, float, float, float) # location, x, y,
 glUniform4f = GLES20._mw_glUniform4f(int, float, float, float, float) # location, x, y, z, w
 glUniformMatrix4fv = GLES20._mw_glUniformMatrix4fv(int, int, bool, FLOATarr, int) # location, count, transpose, value, offset
 
+glBufferData = GLES20._mw_glBufferData(int, int, NIOBuffer, int) # target, size, data, usage
+
 glGenBuffers = GLES20._mw_glGenBuffers(int, INTarr, int) # n, buffers, offset
 glGenTextures = GLES20._mw_glGenTextures(int, INTarr, int) # n, textures, offset
+glGenFramebuffers = GLES20._mw_glGenFramebuffers(int, INTarr, int) # n, framebuffers, offset
+glGenRenderbuffers = GLES20._mw_glGenRenderbuffers(int, INTarr, int) # n, renderbuffers, offset
 
 glBindBuffer = GLES20._mw_glBindBuffer(int, int) # target, buffer
-glBufferData = GLES20._mw_glBufferData(int, int, NIOBuffer, int) # target, size, data, usage
+glBindTexture = GLES20._mw_glBindTexture(int, int) # target, texture
+glBindFramebuffer = GLES20._mw_glBindFramebuffer(int, int) # target, framebuffer
+glBindRenderbuffer = GLES20._mw_glBindRenderbuffer(int, int) # target, framebuffer
+
+glDeleteBuffers = GLES20._mw_glDeleteBuffers(int, INTarr, int) # n, buffers, offset
+glDeleteTextures = GLES20._mw_glDeleteTextures(int, INTarr, int) # n, textures, offset
+glDeleteFramebuffers = GLES20._mw_glDeleteFramebuffers(int, INTarr, int) # n, framebuffers, offset
+glDeleteRenderbuffers = GLES20._mw_glDeleteRenderbuffers(int, INTarr, int) # n, renderbuffers, offset
 
 glUseProgram = GLES20._mw_glUseProgram(int) # program
 glEnableVertexAttribArray = GLES20._mw_glEnableVertexAttribArray(int) # location
@@ -131,18 +144,45 @@ multiplyMM = Matrix._mw_multiplyMM(FLOATarr, int, FLOATarr, int, FLOATarr, int) 
 multiplyMV = Matrix._mw_multiplyMV(FLOATarr, int, FLOATarr, int, FLOATarr, int) # resultVec, resultVecOffset, lhsMat, lhsMatOffset, rhsVec, rhsVecOffset
 transposeM = Matrix._mw_transposeM(FLOATarr, int, FLOATarr, int) # mTrans, mTransOffset, m, mOffset
 translateM = Matrix._mw_translateM(FLOATarr, int, float, float, float) # m, mOffset, x, y, z
+translateM2 = Matrix._mw_translateM(FLOATarr, int, FLOATarr, int, float, float, float) # tm, tmOffset, m, mOffset, x, y, z
 
-glBindTexture = GLES20._mw_glBindTexture(int, int)
-glTexParameteri = GLES20._mw_glTexParameteri(int, int, int)
 glTexImage2D = GLES20._mw_glTexImage2D(int, int, int, int, int, int, int, int, NIOBuffer) # target, level, internalformat, width, height, border, format, type, pixels
+glReadPixels = GLES20._mw_glReadPixels(int, int, int, int, int, int, NIOBuffer) # x, y, width, height, format, type, pixels
+glTexParameterf = GLES20._mw_glTexParameterf(int, int, float) # target, pname, param
+glTexParameterfv = GLES20._mw_glTexParameterfv(int, int, FLOATarr, int) # target, pname, params, offset
+glTexParameteri = GLES20._mw_glTexParameteri(int, int, int)
+glTexParameteriv = GLES20._mw_glTexParameteriv(int, int, INTarr, int) # target, pname, params, offset
 GL_TEXTURE_2D = GLES20._f_GL_TEXTURE_2D
+GL_TEXTURE_CUBE_MAP = GLES20._f_GL_TEXTURE_CUBE_MAP
+GL_TEXTURE_CUBE_MAP_TARGETS = GLES20._f_GL_TEXTURE_CUBE_MAP_POSITIVE_X, GLES20._f_GL_TEXTURE_CUBE_MAP_NEGATIVE_X, GLES20._f_GL_TEXTURE_CUBE_MAP_POSITIVE_Y, GLES20._f_GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, GLES20._f_GL_TEXTURE_CUBE_MAP_POSITIVE_Z, GLES20._f_GL_TEXTURE_CUBE_MAP_NEGATIVE_Z
 GL_TEXTURE_MIN_FILTER = GLES20._f_GL_TEXTURE_MIN_FILTER
 GL_TEXTURE_MAG_FILTER = GLES20._f_GL_TEXTURE_MAG_FILTER
+GL_TEXTURE_WRAP_S = GLES20._f_GL_TEXTURE_WRAP_S
+GL_TEXTURE_WRAP_T = GLES20._f_GL_TEXTURE_WRAP_T
+# GL_TEXTURE_WRAP_R = GLES20._f_GL_TEXTURE_WRAP_R опять OpenGL ES...
 GL_NEAREST = GLES20._f_GL_NEAREST # фильтр ближайшено соседа, как в майнкрафте, как нам и надо ;"-}
 GL_LINEAR = GLES20._f_GL_LINEAR # линейная фильтрация (мыло)
+GL_NEAREST_MIPMAP_NEAREST = GLES20._f_GL_NEAREST_MIPMAP_NEAREST
+GL_LINEAR_MIPMAP_NEAREST = GLES20._f_GL_LINEAR_MIPMAP_NEAREST
+GL_NEAREST_MIPMAP_LINEAR = GLES20._f_GL_NEAREST_MIPMAP_LINEAR
+GL_REPEAT = GLES20._f_GL_REPEAT
+GL_MIRRORED_REPEAT = GLES20._f_GL_MIRRORED_REPEAT
+GL_CLAMP_TO_EDGE = GLES20._f_GL_CLAMP_TO_EDGE
+# GL_CLAMP_TO_BORDER = GLES20._f_GL_CLAMP_TO_BORDER опять OpenGL ES...
+# GL_TEXTURE_BORDER_COLOR = GLES20._f_GL_TEXTURE_BORDER_COLOR без опции из предыдущей строки эта опция теряет смысл существования, потому её и нет в OpenGL ES
 
 glActiveTexture = GLES20._mw_glActiveTexture(20) # texture
 GL_TEXTURE0 = GLES20._f_GL_TEXTURE0
+
+glFramebufferTexture2D = GLES20._mw_glFramebufferTexture2D(int, int, int, int, int) # target, attachment, textarget, texture, level
+glFramebufferRenderbuffer = GLES20._mw_glFramebufferRenderbuffer(int, int, int, int) # target, attachment, renderbuffertarget, renderbuffer
+glCheckFramebufferStatus = GLES20._mw_glCheckFramebufferStatus(int) # target
+glRenderbufferStorage = GLES20._mw_glRenderbufferStorage(int, int, int, int) # target, internalformat, width, height
+GL_FRAMEBUFFER_COMPLETE = GLES20._f_GL_FRAMEBUFFER_COMPLETE
+GL_COLOR_ATTACHMENT0 = GLES20._f_GL_COLOR_ATTACHMENT0
+# GL_DEPTH_STENCIL_ATTACHMENT = GLES20._f_GL_DEPTH_STENCIL_ATTACHMENT
+GL_DEPTH_ATTACHMENT = GLES20._f_GL_DEPTH_ATTACHMENT
+GL_STENCIL_ATTACHMENT = GLES20._f_GL_STENCIL_ATTACHMENT
 
 
 
@@ -160,6 +200,7 @@ class MyBuffer:
     self.setPos = pos = fb._mw_position(INT)
     self.capacity = fb._mw_capacity()
     self.fb = fb # float buffer (либо int buffer)
+    self.clear = fb._mw_clear()
 
     if isArr: put(data)
     else: put(data._a_float if isFloat else data._a_int)
@@ -238,7 +279,6 @@ def checkProgram(program):
   if type(program) is str:
     print2("💥 shader program error:")
     print(program)
-    exit()
   print2("✅ OK shader program:", program)
   return program
 
@@ -287,28 +327,13 @@ def newTexture(ctxResources, resId):
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer.fb)
+  buffer.clear()
   glBindTexture(GL_TEXTURE_2D, 0)
 
   print2("✅ OK texture:", textureId)
   return textureId
 
 
-
-glGenFramebuffers = GLES20._mw_glGenFramebuffers(int, INTarr, int) # n, framebuffers, offset
-glGenRenderbuffers = GLES20._mw_glGenRenderbuffers(int, INTarr, int) # n, renderbuffers, offset
-glBindFramebuffer = GLES20._mw_glBindFramebuffer(int, int) # target, framebuffer
-glBindRenderbuffer = GLES20._mw_glBindRenderbuffer(int, int) # target, framebuffer
-glFramebufferTexture2D = GLES20._mw_glFramebufferTexture2D(int, int, int, int, int) # target, attachment, textarget, texture, level
-glFramebufferRenderbuffer = GLES20._mw_glFramebufferRenderbuffer(int, int, int, int) # target, attachment, renderbuffertarget, renderbuffer
-
-glCheckFramebufferStatus = GLES20._mw_glCheckFramebufferStatus(int) # target
-glRenderbufferStorage = GLES20._mw_glRenderbufferStorage(int, int, int, int) # target, internalformat, width, height
-
-GL_FRAMEBUFFER_COMPLETE = GLES20._f_GL_FRAMEBUFFER_COMPLETE
-GL_COLOR_ATTACHMENT0 = GLES20._f_GL_COLOR_ATTACHMENT0
-# GL_DEPTH_STENCIL_ATTACHMENT = GLES20._f_GL_DEPTH_STENCIL_ATTACHMENT
-GL_DEPTH_ATTACHMENT = GLES20._f_GL_DEPTH_ATTACHMENT
-GL_STENCIL_ATTACHMENT = GLES20._f_GL_STENCIL_ATTACHMENT
 
 GLES20_fields = GLES20.fields()
 GL_errors = {}
@@ -326,16 +351,15 @@ def checkFrameBuffer():
   status = glCheckFramebufferStatus(GL_FRAMEBUFFER)
   if status != GL_FRAMEBUFFER_COMPLETE:
     print2("💥 FBO error:", status, "(%s)" % GL_errors[status])
-    # exit()
   else: print2("✅ FBO ok")
 
-def newFrameBuffer(width, height):
-  arr = INT.new_array(4)
+def newFrameBuffer(width, height, depthTest = True):
+  arr = INT.new_array(3)
   glGenFramebuffers(1, arr, 0)
   glGenTextures(1, arr, 1)
-  glGenRenderbuffers(1, arr, 2)
-  glGenRenderbuffers(1, arr, 3)
-  fbo, textureId, rbo, rbo2 = arr
+  if depthTest: glGenRenderbuffers(1, arr, 2)
+  # glGenRenderbuffers(1, arr, 3)
+  fbo, textureId, rbo = arr
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo)
 
@@ -345,23 +369,32 @@ def newFrameBuffer(width, height):
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
   glBindTexture(GL_TEXTURE_2D, 0)
 
-  glBindRenderbuffer(GL_RENDERBUFFER, rbo)
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height)
+  if depthTest:
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo)
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height)
 
-  glBindRenderbuffer(GL_RENDERBUFFER, rbo2)
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, width, height)
-  glBindRenderbuffer(GL_RENDERBUFFER, 0)
+  # glBindRenderbuffer(GL_RENDERBUFFER, rbo2)
+  # glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, width, height)
+  # glBindRenderbuffer(GL_RENDERBUFFER, 0)
 
   # checkFrameBuffer() нет аттачментов
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureId, 0)
   # checkFrameBuffer() ok
-  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo)
+  if depthTest: glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo)
   # checkFrameBuffer() ok
   # трафарет (при том не нужный мне 🗿) отваливается с ошибкой GL_FRAMEBUFFER_UNSUPPORTED
   #glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo2)
   checkFrameBuffer()
  
-  print2("🥳 FBO!", fbo, textureId, rbo, rbo2)
+  print2("🥳 FBO:", fbo, textureId, rbo if depthTest else "x")
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0)
   return arr
+
+def deleteFrameBuffer(arr):
+  fbo, textureId, rbo = arr
+  depthTest = rbo > 0
+  glDeleteFramebuffers(1, arr, 0)
+  glDeleteTextures(1, arr, 1)
+  if depthTest: glDeleteRenderbuffers(1, arr, 2)
+  print2("♻️ FBO:", fbo, textureId, rbo if depthTest else "x")

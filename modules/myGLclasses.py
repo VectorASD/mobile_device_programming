@@ -46,6 +46,12 @@ class Model:
     #glBindBuffer(GL_ARRAY_BUFFER, 0)
     #glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
+  def delete(self):
+    VBO, IBO, indexes = self.data
+    buffers = (VBO, IBO)._a_int
+    glDeleteBuffers(2, buffers, 0)
+    print2("♻️ buffers:", buffers[:])
+
 
 
 
@@ -103,3 +109,143 @@ class Quaternion:
   def rotatedVector(self, x, y, z):
     x, y, z, w = self.multiply(Quaternion(x, y, z, 0)).multiply(self.conjugated()).xyzw
     return x, y, z
+
+
+
+class SkyBox:
+  program = None
+  model = None
+  def __init__(self, width, height, textureGetter):
+    arr = INT.new_array(1)
+    glGenTextures(1, arr, 0)
+    self.textureId = textureId = arr[0]
+    glBindTexture(GL_TEXTURE_CUBE_MAP, textureId)
+    #checkGLError() ok
+
+    for i in range(6):
+      buffer = textureGetter(i)
+      glTexImage2D(GL_TEXTURE_CUBE_MAP_TARGETS[i], 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer)
+      buffer._m_clear()
+      #checkGLError() ok
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+    #checkGLError() ok
+
+    glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
+    print2("✅ OK cube map texture:", textureId)
+    self.genProgram()
+    self.genModel()
+
+  def genProgram(self):
+    if SkyBox.program is None:
+      SkyBox.program = checkProgram(newProgram("""
+attribute vec3 vPosition;
+
+uniform mat4 uVPMatrix;
+
+varying vec3 TexCoords;
+
+void main() {
+  TexCoords = vPosition;
+  vec4 pos = uVPMatrix * vec4(vPosition, 1.);
+  gl_Position = pos.xyww;
+}
+""", """
+precision mediump float;
+
+varying vec3 TexCoords;
+
+uniform samplerCube uSkybox;
+
+void main() {             
+    gl_FragColor = textureCube(uSkybox, TexCoords);
+}
+""", ('vPosition', ), ('uVPMatrix', 'uSkybox')))
+    program, attribs, uniforms = SkyBox.program
+    self.vPosition = attribs["vPosition"]
+    self.uVPMatrix = uniforms["uVPMatrix"]
+    self.uSkybox = uniforms["uSkybox"]
+
+  def genModel(self):
+    if SkyBox.model is not None: return
+    SkyBox.model = Model((
+      -1, -1, -1, # 0
+       1, -1, -1, # 1
+       1, -1,  1, # 2
+      -1, -1,  1, # 3
+      -1,  1, -1, # 4
+       1,  1, -1, # 5
+       1,  1,  1, # 6
+      -1,  1,  1, # 7
+    ), (
+       0,  2,  1,  0,  3,  2, # дно куба
+       0,  1,  4,  1,  5,  4, # фронт
+       1,  2,  5,  2,  6,  5, # правый бок
+       2,  3,  7,  2,  7,  6, # тыл
+       3,  0,  7,  0,  4,  7, # левый бок
+       4,  5,  7,  5,  6,  7, # верх куба
+    ))
+
+  def draw(self, VPmatrix):
+    def func():
+      glVertexAttribPointer(self.vPosition, 3, GL_FLOAT, False, 0, 0)
+
+    glEnable(GL_DEPTH_TEST)
+    glDepthFunc(GL_LEQUAL)
+    enableProgram(SkyBox.program)
+    glUniformMatrix4fv(self.uVPMatrix, 1, False, VPmatrix, 0)
+    glUniform1f(self.uSkybox, 0)
+    glBindTexture(GL_TEXTURE_CUBE_MAP, self.textureId)
+
+    SkyBox.model.draw(func)
+
+    glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
+    glDepthFunc(GL_LESS)
+
+  def restart(self):
+    print("SKYBOX RESTART!")
+    SkyBox.model = None
+    SkyBox.program = None
+
+
+
+def skyBoxLoader(gridProgram, dbg = False):
+  oldViewportParams = INT.new_array(4)
+  glGetIntegerv(GL_VIEWPORT, oldViewportParams, 0)
+
+  fbo = newFrameBuffer(32, 32, False)
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo[0])
+  glViewport(0, 0, 32, 32)
+  #glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+  glClear(GL_DEPTH_BUFFER_BIT)
+
+  def textureCutter(n):
+    id = (4, 50, 384, 65, 78, 401)[n]
+    model = gridProgram.createModel(id, 0, 0, 1)
+    gridProgram.draw(1, 0, (model,))
+    model.delete()
+    buffer = MyBuffer.allocateDirect(32 * 32 * 4)
+    buffer._m_order(MyBuffer.nativeOrder)
+    glReadPixels(0, 0, 32, 32, GL_RGBA, GL_UNSIGNED_BYTE, buffer)
+    if dbg:
+      buffer = buffer._m_asIntBuffer()
+      #assert buffer._m_remaining() == 1024
+      arr = INT.new_array(buffer._m_remaining())
+      buffer._m_get(arr)
+      print("👍", n, arr[:])
+    return buffer
+
+  skybox = SkyBox(32, 32, textureCutter)
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0)
+  deleteFrameBuffer(fbo)
+  x, y, w, h = oldViewportParams
+  glViewport(x, y, w, h)
+  return skybox
+
+glDepthFunc = GLES20._mw_glDepthFunc(int) # func
+GL_LEQUAL = GLES20._f_GL_LEQUAL
+GL_LESS = GLES20._f_GL_LESS

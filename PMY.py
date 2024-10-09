@@ -45,7 +45,7 @@ void main() {
 
 
 class d2textureProgram():
-  def __init__(self):
+  def __init__(self, texture):
     self.program = program = checkProgram(newProgram("""
 attribute vec2 vPosition;
 attribute vec2 vUV;
@@ -57,7 +57,7 @@ varying vec2 vaUV;
 varying float vaType;
 
 void main() {
-  gl_Position = vec4(vPosition.x, vPosition.y * uAspect - uAspect, 1, 1);
+  gl_Position = vec4(vPosition.x, vPosition.y * uAspect - (1. - uAspect), 0, 1);
   vaUV = vUV;
   vaType = vType;
 }
@@ -86,14 +86,15 @@ void main() {
     self.models = []
     self.add(160, 0.25, 5.5, 8, 1)
     self.add(142, 0.25, 6.75, 8, 2)
+    self.texture = texture
 
-  def add(self, id, posX, posY, L = 10, t = 0):
-    L //= 2
+  def createModel(self, id, posX, posY, L = 10, t = 0):
+    L /= 2
     L1 = L - 1
     pLx, pRx, pLy, pRy = (posX - L) / L, (posX - L1) / L, (posY - L) / -L, (posY - L1) / -L
     y, x = divmod(id, 8)
     Lx, Rx, Ly, Ry = x / 8, (x + 1) / 8, y / 64, (y + 1) / 64
-    model = Model((
+    return Model((
       pLx, pLy, Lx, Ly, t,
       pRx, pLy, Rx, Ly, t,
       pRx, pRy, Rx, Ry, t,
@@ -101,19 +102,28 @@ void main() {
     ), (
       0, 1, 2, 0, 2, 3,
     ))
+  def add(self, id, posX, posY, L = 10, t = 0):
+    model = self.createModel(id, posX, posY, L, t)
     self.models.append(model)
 
-  def draw(self, aspect, eventN):
+  def draw(self, aspect, eventN, customModels = None):
     def func():
       glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 5 * 4, 0)
       glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 5 * 4, 2 * 4)
       glVertexAttribPointer(vType,     1, GL_FLOAT, False, 5 * 4, 4 * 4)
-    enableProgram(self.program)
     attribs = self.program[1]
     vPosition, vUV, vType = attribs["vPosition"], attribs["vUV"], attribs["vType"]
+
+    glDisable(GL_DEPTH_TEST)
+    glDisable(GL_CULL_FACE)
+    enableProgram(self.program)
     glUniform1f(self.uAspect, aspect)
     glUniform1i(self.uEvent, eventN)
-    for model in self.models: model.draw(func)
+    glUniform1i(self.uTexture, 0)
+    glBindTexture(GL_TEXTURE_2D, self.texture)
+
+    models = customModels if customModels is not None else self.models
+    for model in models: model.draw(func)
 
 
 
@@ -160,24 +170,6 @@ def figures():
 
 
 
-main_xml = """
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent">
-    <TextView
-        android:textSize="29dp"
-        android:textColor="#40ad80"
-        android:layout_gravity="center"
-        android:id="@+id/textView"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="TEXT"/>
-</LinearLayout>
-""".strip()
-
 class myRenderer:
   def __init__(self):
     self.frames = self.last_frames = 0
@@ -189,6 +181,9 @@ class myRenderer:
     self.camX, self.camY, self.camZ = 0, 0, -3.5
     self.eventN = 0
     self.time, self.td = time(), 0
+
+    self.W = self.H = self.WH_ratio = -1
+    self.FBO = None
 
   def fps(self):
     T = time()
@@ -208,11 +203,10 @@ class myRenderer:
 
   def onSurfaceCreated(self, gl10, config):
     print("📽️ onSurfaceCreated", gl10, config)
-    glClearColor(0.9, 0.95, 1, 0)
+    # glClearColor(0.9, 0.95, 1, 0)
     self.program = program, attribs, uniforms = mainProgram()
     Model.calcAttribs(attribs)
 
-    #glUniform4f(uniforms["vColor"], 0, 0, 1, 1)
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
     glActiveTexture(GL_TEXTURE0)
@@ -221,36 +215,39 @@ class myRenderer:
     self.viewM = FLOAT.new_array(16)
     self.projectionM = FLOAT.new_array(16)
     self.MVPmatrix = FLOAT.new_array(16)
+    self.VPmatrix = FLOAT.new_array(16)
 
     setIdentityM(modelM, 0)
     self.calcViewMatrix()
 
     textures = rm.get("drawable/textures")
-    self.mainTexture = newTexture(ctxResources, textures)
-    print("textures:", hex(textures), self.mainTexture)
+    self.mainTexture = mainTextures = newTexture(ctxResources, textures)
+    print("textures:", hex(textures), mainTextures)
 
-    self.program2 = prog2 = d2textureProgram()
-
-    #checkGLError() TODO
-    #glUniform1i(prog2.uTexture, 0)
-    #checkGLError()
+    self.program2 = d2textureProgram(mainTextures)
 
   def onSurfaceChanged(self, gl10, width, height):
     print("📽️ onSurfaceChanged", gl10, width, height)
+    if width == self.W and height == self.H: return
+
     glViewport(0, 0, width, height)
-    self.WHAspect = self.W, self.H, self.WH_ratio = width, height, width / height
+    self.W, self.H, self.WH_ratio = width, height, width / height
     self.models = figures()
 
     perspectiveM(self.projectionM, 0, 90, self.WH_ratio, 0.01, 1000)
     self.calcMVPmatrix()
 
+    if self.FBO is not None: deleteFrameBuffer(self.FBO)
     self.FBO = newFrameBuffer(width, height)
+
+    self.skybox = skyBoxLoader(self.program2)
 
   def calcMVPmatrix(self):
     MVPmatrix = self.MVPmatrix
     multiplyMM(MVPmatrix, 0, self.projectionM, 0, self.viewM, 0)
     multiplyMM(MVPmatrix, 0, MVPmatrix, 0, self.modelM, 0)
     # print("MVP:", self.MVPmatrix[:])
+    multiplyMM(self.VPmatrix, 0, self.projectionM, 0, self.viewNotTranslatedM, 0)
     self.updMVP = False
 
   def calcViewMatrix(self):
@@ -260,11 +257,10 @@ class myRenderer:
 
     q = Quaternion.fromYPR(yaw, pitch, roll)
     q2 = q.conjugated()
-    mat = q2.toMatrix()
+    self.viewNotTranslatedM = mat = q2.toMatrix()
 
-    translateM(mat, 0, -self.camX, -self.camY, -self.camZ)
+    translateM2(self.viewM, 0, mat, 0, -self.camX, -self.camY, -self.camZ)
 
-    self.viewM = mat
     self.updMVP = True
     self.forward = q.rotatedVector(0, 0, -1)
 
@@ -280,10 +276,11 @@ class myRenderer:
       self.calcViewMatrix()
 
   def drawScene(self):
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    # glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    glClear(GL_DEPTH_BUFFER_BIT)
 
+    glEnable(GL_CULL_FACE)
     glEnable(GL_DEPTH_TEST)
-    #glEnable(GL_CULL_FACE)
 
     program = self.program
     enableProgram(program)
@@ -295,9 +292,8 @@ class myRenderer:
     glBindTexture(GL_TEXTURE_2D, self.FBO[1])
     for model in self.models: model.draw()
 
-    glDisable(GL_DEPTH_TEST)
-    glDisable(GL_CULL_FACE)
-    glBindTexture(GL_TEXTURE_2D, self.mainTexture)
+    self.skybox.draw(self.VPmatrix)
+
     self.program2.draw(self.WH_ratio, self.eventN)
 
   def onDrawFrame(self, gl10):
@@ -325,6 +321,11 @@ class myRenderer:
   def event(self, up, down):
     self.eventN = up | down * 2
 
+  def restart(self):
+    print2("~" * 53)
+    self.W = self.H = self.WH_ratio = -1
+    self.skybox.restart()
+
   reverse = {
     "cr": onSurfaceCreated,
     "ch": onSurfaceChanged,
@@ -332,6 +333,24 @@ class myRenderer:
   }
 
 
+
+main_xml = """
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <TextView
+        android:textSize="29dp"
+        android:textColor="#40ad80"
+        android:layout_gravity="center"
+        android:id="@+id/textView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="TEXT"/>
+</LinearLayout>
+""".strip()
 
 class activityHandler:
   def onCreate(self, activity):
@@ -360,7 +379,9 @@ class activityHandler:
     return True # lock setContentView
 
   def onStart(self): print("onStart")
-  def onRestart(self): print("onRestart")
+  def onRestart(self):
+    print("onRestart")
+    self.renderer.restart()
   def onResume(self):
     print("onResume")
     self.viewResume()
