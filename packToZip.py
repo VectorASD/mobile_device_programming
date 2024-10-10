@@ -14,6 +14,7 @@ paths = (
   ("modules/myGL.py", None),
   ("modules/myGLclasses.py", None),
   ("modules/rbxmReader.py", None),
+  ("modules/rbxmMeshReader.py", None),
   ("resources/textures.png", None),
   ("resources/avatar.rbxm", None),
 )

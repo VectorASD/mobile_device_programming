@@ -4,6 +4,7 @@ from float import FLOAT
 from double import DOUBLE
 
 from android.content.Context import Context
+from android.content.res.Resources import Resources
 from android.view.View import View
 from android.view.Window import Window
 from android.view.WindowManager_._LayoutParams import WindowManagerLayoutParams
@@ -15,8 +16,10 @@ from java.nio.Buffer import NIOBuffer
 from java.nio.ByteBuffer import jByteBuffer
 from java.nio.ByteOrder import ByteOrder
 from java.lang.Math import Math
+from android.graphics.Bitmap import Bitmap
 from android.graphics.BitmapFactory import BitmapFactory
 from android.graphics.BitmapFactory_._Options import BitmapFactoryOptions
+from android.opengl.GLUtils import GLUtils
 
 BYTEarr = ()._a_byte
 INTarr = ()._a_int # INT.new_array(0)
@@ -139,14 +142,30 @@ glBlendFunc = GLES20._mw_glBlendFunc(int, int) # src factor, dst factor
 GL_SRC_ALPHA = GLES20._f_GL_SRC_ALPHA
 GL_ONE_MINUS_SRC_ALPHA = GLES20._f_GL_ONE_MINUS_SRC_ALPHA
 
-perspectiveM = Matrix._mw_perspectiveM(FLOATarr, int, float, float, float, float) # m, offset, fovy, aspect, zNear, zFar
-setLookAtM = Matrix._mw_setLookAtM(FLOATarr, int, float, float, float, float, float, float, float, float, float) # rm, rmOffset, eyeX, eyeY, eyeZ, centerX, centerY, centerZ, upX, upY, upZ
+
+
 setIdentityM = Matrix._mw_setIdentityM(FLOATarr, int) # sm, smOffset
+invertM = Matrix._mw_invertM(FLOATarr, int, FLOATarr, int) # mInv, mInvOffset, m, mOffset
+transposeM = Matrix._mw_transposeM(FLOATarr, int, FLOATarr, int) # mTrans, mTransOffset, m, mOffset
 multiplyMM = Matrix._mw_multiplyMM(FLOATarr, int, FLOATarr, int, FLOATarr, int) # result, resultOffset, lhs, lhsOffset, rhs, rhsOffset
 multiplyMV = Matrix._mw_multiplyMV(FLOATarr, int, FLOATarr, int, FLOATarr, int) # resultVec, resultVecOffset, lhsMat, lhsMatOffset, rhsVec, rhsVecOffset
-transposeM = Matrix._mw_transposeM(FLOATarr, int, FLOATarr, int) # mTrans, mTransOffset, m, mOffset
+lengthVec = Matrix._mw_length(float, float, float) # x, y, z
+
+perspectiveM = Matrix._mw_perspectiveM(FLOATarr, int, float, float, float, float) # m, offset, fovy, aspect, zNear, zFar
+orthoM = Matrix._mw_orthoM(FLOATarr, int, float, float, float, float, float, float) # m, mOffset, left, right, bottom, top, near, far
+frustumM = Matrix._mw_frustumM(FLOATarr, int, float, float, float, float, float, float) # m, offset, left, right, bottom, top, near, far
+setLookAtM = Matrix._mw_setLookAtM(FLOATarr, int, float, float, float, float, float, float, float, float, float) # rm, rmOffset, eyeX, eyeY, eyeZ, centerX, centerY, centerZ, upX, upY, upZ
+
 translateM = Matrix._mw_translateM(FLOATarr, int, float, float, float) # m, mOffset, x, y, z
 translateM2 = Matrix._mw_translateM(FLOATarr, int, FLOATarr, int, float, float, float) # tm, tmOffset, m, mOffset, x, y, z
+
+scaleM = Matrix._mw_scaleM(FLOATarr, int, float, float, float) # m, mOffset, x, y, z
+scaleM2 = Matrix._mw_scaleM(FLOATarr, int, FLOATarr, int, float, float, float) # sm, smOffset, m, mOffset, x, y, z
+
+rotateM = Matrix._mw_rotateM(FLOATarr, int, float, float, float, float) # m, mOffset, a (in deg), x, y, z
+rotateM2 = Matrix._mw_rotateM(FLOATarr, int, FLOATarr, int, float, float, float, float) # rm, rmOffset, m, mOffset, a (in deg), x, y, z
+
+
 
 glTexImage2D = GLES20._mw_glTexImage2D(int, int, int, int, int, int, int, int, NIOBuffer) # target, level, internalformat, width, height, border, format, type, pixels
 glReadPixels = GLES20._mw_glReadPixels(int, int, int, int, int, int, NIOBuffer) # x, y, width, height, format, type, pixels
@@ -312,28 +331,43 @@ bitmapFactoryOptions._f_inDensity = 0 # чтобы не сглаживало (в
 bitmapFactoryOptions._f_inScreenDensity = 0
 bitmapFactoryOptions._f_inTargetDensity = 0
 
-def newTexture(ctxResources, resId):
-  bitmap = BitmapFactory._m_decodeResource(ctxResources, resId, bitmapFactoryOptions)
+decodeResource = BitmapFactory._mw_decodeResource(Resources, int, BitmapFactoryOptions) # res, id, opts
+decodeByteArray = BitmapFactory._mw_decodeByteArray(BYTEarr, int, int, BitmapFactoryOptions) # data, offset, length, opts
+glUtilsTexImage2D = GLUtils._mw_texImage2D(int, int, Bitmap, int) # target, level, bitmap, border
+
+def _newTexture(bitmap, filter):
+  """
   W, H = bitmap._m_getWidth(), bitmap._m_getHeight()
   pixels = INT.new_array(W * H)
   bitmap._m_getPixels(pixels, 0, W, 0, 0, W, H) # pixels, offset, stride, x, y, width, height
-  byteCount = bitmap._m_getByteCount()
+  # byteCount = bitmap._m_getByteCount()
   bitmap._m_recycle()
   buffer = IntBuffer(pixels, True)
+  """
 
   ids = INT.new_array(1)
   glGenTextures(1, ids, 0)
   textureId = ids[0]
 
   glBindTexture(GL_TEXTURE_2D, textureId)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer.fb)
-  buffer.clear()
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter)
+  # glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer.fb)
+  #buffer.clear()
+  glUtilsTexImage2D(GL_TEXTURE_2D, 0, bitmap, 0)
+  bitmap._m_recycle()
   glBindTexture(GL_TEXTURE_2D, 0)
 
   print2("✅ OK texture:", textureId)
   return textureId
+
+def newTexture(ctxResources, resId):
+  bitmap = decodeResource(ctxResources, resId, bitmapFactoryOptions)
+  return _newTexture(bitmap, GL_NEAREST)
+
+def newTexture2(data):
+  bitmap = decodeByteArray(data, 0, len(data), bitmapFactoryOptions)
+  return _newTexture(bitmap, GL_LINEAR)
 
 
 
@@ -367,6 +401,8 @@ def newFrameBuffer(width, height, depthTest = True):
 
   glBindTexture(GL_TEXTURE_2D, textureId)
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, None)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
   glBindTexture(GL_TEXTURE_2D, 0)

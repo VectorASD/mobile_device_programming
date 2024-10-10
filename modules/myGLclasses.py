@@ -29,6 +29,10 @@ class Model:
 
     print2("✅ OK buffers:", VBO, IBO)
     self.data = VBO, IBO, IBOdata.capacity()
+    self.matrix = None
+
+  def recalc(self, location, mat):
+    self.matrix = location, mat
 
   def draw(self, func = None):
     VBO, IBO, indexes = self.data
@@ -42,6 +46,11 @@ class Model:
       glVertexAttribPointer(Model.vUV,       2, GL_FLOAT, False, 9 * 4, 7 * 4)
     else: func()
 
+    mat = self.matrix
+    if mat is not None:
+      location, mat = mat
+      glUniformMatrix4fv(location, 1, False, mat, 0)
+
     glDrawElements(GL_TRIANGLES, indexes, GL_UNSIGNED_INT, 0)
     #glBindBuffer(GL_ARRAY_BUFFER, 0)
     #glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
@@ -51,6 +60,52 @@ class Model:
     buffers = (VBO, IBO)._a_int
     glDeleteBuffers(2, buffers, 0)
     print2("♻️ buffers:", buffers[:])
+
+
+
+class TranslateModel:
+  def __init__(self, model, translate):
+    self.model = model
+    self.translate = translate
+
+  def recalc(self, location, mat):
+    tMat = FLOAT.new_array(16)
+    x, y, z = self.translate
+    translateM2(tMat, 0, mat, 0, x, y, z)
+    self.model.recalc(location, tMat)
+
+  def draw(self, func = None):
+    self.model.draw(func)
+
+
+
+class ScaleModel:
+  def __init__(self, model, scale):
+    self.model = model
+    self.scale = scale
+
+  def recalc(self, location, mat):
+    sMat = FLOAT.new_array(16)
+    x, y, z = self.scale
+    scaleM2(sMat, 0, mat, 0, x, y, z)
+    self.model.recalc(location, sMat)
+
+  def draw(self, func = None):
+    self.model.draw(func)
+
+
+
+class TexturedModel:
+  def __init__(self, model, textureID):
+    self.model = model
+    self.textureID = textureID
+
+  def recalc(self, location, mat):
+    self.model.recalc(location, mat)
+
+  def draw(self, func = None):
+    glBindTexture(GL_TEXTURE_2D, self.textureID)
+    self.model.draw(func)
 
 
 

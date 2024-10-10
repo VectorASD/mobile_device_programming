@@ -39,7 +39,7 @@ varying vec2 vaUV;
 
 void main() {
   if (vaUV.x < 0.) gl_FragColor = vaColor;
-  else gl_FragColor = texture2D(uTexture, vaUV).bgra;
+  else gl_FragColor = texture2D(uTexture, vaUV);
 }
 """, ('vPosition', 'vColor', 'vUV'), ('uMVPMatrix', 'uTexture')))
 
@@ -76,7 +76,7 @@ void main() {
 	 int b1 = uEvent - b2 * 2;
 	 float X = 1.;
   if (vaType == 1. && b1 > 0 || vaType == 2. && b2 > 0) X = 0.5;
-  vec4 clr = texture2D(uTexture, vaUV).bgra;
+  vec4 clr = texture2D(uTexture, vaUV);
   gl_FragColor = vec4(clr.rgb * X, clr.a);
 }
     """, ('vPosition', 'vUV', 'vType'), ('uTexture', 'uAspect', 'uEvent')))
@@ -153,10 +153,10 @@ def figures():
      1,  1, -1,   0, 1, 1, 1,   -1, -1, #  5
      1,  1,  1,   0, 0, 0, 0,   -1, -1, #  6
     -1,  1,  1,   1, 0, 1, 1,   -1, -1, #  7
-    -1, -1, -1,   1, 1, 1, 1,    1, 1, # 8
-     1, -1, -1,   1, 0, 0, 1,    0, 1, # 9
-    -1,  1, -1,   0, 1, 0, 1,    1, 0, # 10
-     1,  1, -1,   0, 1, 1, 1,    0, 0, # 11
+    -1, -1, -1,   1, 1, 1, 1,    1, 0, # 8
+     1, -1, -1,   1, 0, 0, 1,    0, 0, # 9
+    -1,  1, -1,   0, 1, 0, 1,    1, 1, # 10
+     1,  1, -1,   0, 1, 1, 1,    0, 1, # 11
   ), (
      0,  1,  2,  0,  2,  3, # дно куба
    # 0,  1,  4,  1,  4,  5, # фронт
@@ -167,7 +167,7 @@ def figures():
      4,  7,  5,  5,  7,  6, # верх куба
   ))
 
-  return triangles, cube
+  return triangles, ScaleModel(cube, (0.5, 1, 0.5))
 
 
 
@@ -212,20 +212,23 @@ class myRenderer:
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
     glActiveTexture(GL_TEXTURE0)
 
-    self.modelM = modelM = FLOAT.new_array(16)
     self.viewM = FLOAT.new_array(16)
     self.projectionM = FLOAT.new_array(16)
     self.MVPmatrix = FLOAT.new_array(16)
     self.VPmatrix = FLOAT.new_array(16)
 
-    setIdentityM(modelM, 0)
     self.calcViewMatrix()
+
+    self.models = figures()
 
     textures = rm.get("drawable/textures")
     self.mainTexture = mainTextures = newTexture(ctxResources, textures)
     print("textures:", hex(textures), mainTextures)
 
     self.program2 = d2textureProgram(mainTextures)
+    self.skybox = skyBoxLoader(self.program2)
+
+    self.rbxModels = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm")
 
   def onSurfaceChanged(self, gl10, width, height):
     print("📽️ onSurfaceChanged", gl10, width, height)
@@ -233,7 +236,6 @@ class myRenderer:
 
     glViewport(0, 0, width, height)
     self.W, self.H, self.WH_ratio = width, height, width / height
-    self.models = figures()
 
     perspectiveM(self.projectionM, 0, 90, self.WH_ratio, 0.01, 1000)
     self.calcMVPmatrix()
@@ -241,15 +243,16 @@ class myRenderer:
     if self.FBO is not None: deleteFrameBuffer(self.FBO)
     self.FBO = newFrameBuffer(width, height)
 
-    self.skybox = skyBoxLoader(self.program2)
-
   def calcMVPmatrix(self):
     MVPmatrix = self.MVPmatrix
     multiplyMM(MVPmatrix, 0, self.projectionM, 0, self.viewM, 0)
-    multiplyMM(MVPmatrix, 0, MVPmatrix, 0, self.modelM, 0)
     # print("MVP:", self.MVPmatrix[:])
     multiplyMM(self.VPmatrix, 0, self.projectionM, 0, self.viewNotTranslatedM, 0)
     self.updMVP = False
+
+    location = self.program[2]["uMVPMatrix"]
+    for model in self.models: model.recalc(location, MVPmatrix)
+    for model in self.rbxModels: model.recalc(location, MVPmatrix)
 
   def calcViewMatrix(self):
     yaw = self.yaw * PI180
@@ -270,7 +273,7 @@ class myRenderer:
     if event in (1, 2):
       if event == 2: td = -td
       x, y, z = self.forward
-      td *= 3
+      td *= 5
       self.camX += x * td
       self.camY += y * td
       self.camZ += z * td
@@ -288,10 +291,10 @@ class myRenderer:
     #checkGLError() TODO
     #glUniform1i(program[2]["uTexture"], 0)
     #checkGLError()
-    glUniformMatrix4fv(program[2]["uMVPMatrix"], 1, False, self.MVPmatrix, 0)
 
     glBindTexture(GL_TEXTURE_2D, self.FBO[1])
     for model in self.models: model.draw()
+    for model in self.rbxModels: model.draw()
 
     self.skybox.draw(self.VPmatrix)
 
@@ -325,6 +328,7 @@ class myRenderer:
   def restart(self):
     print2("~" * 53)
     self.W = self.H = self.WH_ratio = -1
+    self.FBO = None
     self.skybox.restart()
 
   reverse = {

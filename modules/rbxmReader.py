@@ -1,6 +1,7 @@
 from net.jpountz.lz4.LZ4Factory import LZ4Factory
 from java.net.URL import URL
 #from java.io.InputStreamReader import InputStreamReader
+import rbxmMeshReader
 
 LZ4factory = LZ4Factory._m_fastestJavaInstance()
 LZ4decompressor = LZ4factory._m_fastDecompressor()
@@ -36,15 +37,17 @@ def NetworkRequests(url):
 class Storager:
   def __init__(self):
     path = "/sdcard/my_cache.asd"
-    self.base = base = {}
-    try:
-      with open(path, "rb") as file:
-        while True:
-          if not file.read(1): break
-          file.seek(-1, 1)
-          name, cdn, data = (file.read(BytesIO(file.read(4)).unpack("<I")[0]) for i in range(3))
-          base[name.decode("utf-8")] = cdn, data
-    except OSError: pass
+    self.base = base = STORAGE("storager_cache")
+    if not base:
+      try:
+        with open(path, "rb") as file:
+          while True:
+            b = file.read(1)
+            if not b: break
+            file.seek(-1, 1)
+            name, cdn, data = (file.read(BytesIO(file.read(4)).unpack("<I")[0]) for i in range(3))
+            base[name.decode("utf-8")] = cdn, data
+      except OSError: pass
     self.file = open(path, "a")
 
   def writeStr(self, str):
@@ -71,6 +74,42 @@ class Storager:
     except KeyError: return None
 
 storager = Storager()
+
+
+
+def cdnLoader(asset):
+  if not asset: return
+
+  pos = len(asset) - 1
+  while pos > 0 and asset[pos] in "0123456789": pos -= 1
+  if asset[pos] not in "0123456789": pos += 1
+  ID = asset[pos:]
+  if not ID: return
+
+  assetURL = "https://assetdelivery.roblox.com/v1/assetId/%s" % ID
+  print(assetURL)
+
+  memory = storager.get(assetURL)
+  if memory is not None:
+    # print("CACHE!")
+    cdn, content = memory
+    return content
+
+  # print("NETWORK!")
+  status, response = NetworkRequests(assetURL)
+  print("status:", status)
+  if status not in range(200, 300): exit("Status error: %s\n%s" % (status, response))
+  obj = json.load(response)
+  print(obj)
+
+  status, content = NetworkRequests(obj["location"])
+  print("status:", status)
+  if status not in range(200, 300): exit("Status error: %s\n%s" % (status, response))
+
+  storager.put(assetURL, response, content)
+  return content
+
+
 
 # структура rbxm (Roblox Binary Model Format): https://dom.rojo.space/binary.html#byte-interleaving
 # чей-то уже существующий python-вариант парсера rbxm: https://github.com/tapple/pyrxbm/blob/main/pyrxbm/binary.py
@@ -229,7 +268,7 @@ def Int64(content, count): # 0x1b
   data = b"".join(map(bytes, zip(content.read(count), content.read(count), content.read(count), content.read(count), content.read(count), content.read(count), content.read(count), content.read(count))))
   return ((x >> 1) ^ -(x & 1) for x in BytesIO(data).unpack(">%sQ" % count)) # TODO
 
-def SharedString(content, count): # 0x1c
+def SharedString(content, count, SStrings): # 0x1c
   data = b"".join(map(bytes, zip(content.read(count), content.read(count), content.read(count), content.read(count))))
   return (SStrings[i] for i in BytesIO(data).unpack(">%sI" % count)) # TODO
 
@@ -252,10 +291,10 @@ def Font(content, count): # 0x20
   return fonts
 
 def Capabilities(content, count): # 0x21
-  print(content.read().hex())
+  content.read()
   return "?" * count
-  exit()
 
+dbgPrint = False
 dbgType = None
 
 PROP_types = {
@@ -292,7 +331,7 @@ PROP_types = {
   0x1e: OptionalCoordinateFrame,
   # 0x1f: UniqueId,
   0x20: Font,
-  # 0x21: Capabilities, неизвестное содержание. Везде нулевые байты :/
+  0x21: Capabilities, # неизвестное содержание. Везде нулевые байты :/
   # всё, что после 0x21: не существует
 }
 
@@ -313,17 +352,15 @@ def META(content):
   if what: exit("Не до конца считанный META-чанк: %s" % what)
   return meta
 
-def SSTR(content): # Shared STRings
+def SSTR(content, SStrings): # Shared STRings
   version, count = content.unpack("<II")
-  SStrings = []
   if version != 0: exit("Странная версия SSTR-чанка: %s" % version)
   for i in range(count):
     hash, str = content.read(16), String(content)
-    print("%s %r" % (hash.hex(), str))
+    if dbgPrint: print("%s %r" % (hash.hex(), str))
     SStrings.append(str)
   what = content.read()
   if what: exit("Не до конца считанный SSTR-чанк: %s" % what)
-  return SStrings
 
 def INST(content):
   classID = content.unpack("<I")[0]
@@ -337,7 +374,9 @@ def INST(content):
   return classID, className, objectFormat, referents, markers
 
 typesAll = set()
-def PROP(content):
+def PROP(content, CTX):
+  SStrings, classes, root, instances = CTX
+
   classID = content.unpack("<I")[0]
   propertyName = String(content)
   typeID = content.read(1)[0]
@@ -358,7 +397,7 @@ def PROP(content):
   if Type is None:
     print("Неизвестный typeID: %s" % typeID)
     values = ()
-  else: values = Type(content, count)
+  else: values = Type(content, count, SStrings) if typeID == 0x1c else Type(content, count)
 
   # values2 = [] # только для печати
   for id, value in zip(referents, values):
@@ -383,7 +422,7 @@ def PROP(content):
     #print(count, len(what), what.hex(), tuple(values2))
     print()
 
-def PRNT(content): # parents
+def PRNT(content, instances): # parents
   version, count = content.unpack("<BI")
   if version != 0: exit("Странная версия PRNT-чанка: %s" % version)
   childs = Referent(content, count)
@@ -407,12 +446,7 @@ def PRNT(content): # parents
 
 
 
-SStrings = None
-classes = {}
-root = {"_id": -1, "_parent": "x", "_childs": [], "_class": "root", "Name": (1, "root")}
-instances = {-1: root}
-
-def printTree(node = root, lvl = "", check = False):
+def printTree(node, lvl = "", check = False):
   id, parent, childs, className, name = node["_id"], node["_parent"], node["_childs"], node["_class"], node["Name"][1]
   data = {k: v for k, v in node.items() if k not in {"_id", "_parent", "_childs", "_class", "Name"}}
   data = {k: v for k, (t, v) in data.items() if dbgType is None or t == dbgType}
@@ -424,7 +458,7 @@ def printTree(node = root, lvl = "", check = False):
   lvl += "| "
   for child in childs: printTree(child, lvl)
 
-def printTree2(node = root, lvl = ""):
+def printTree2(node, lvl = ""):
   id, childs, className, name = node["_id"], node["_childs"], node["_class"], node["Name"][1]
   # data = {k: v for k, v in node.items() if k not in {"_id", "_parent", "_childs", "_class", "Name"}}
   data = ""
@@ -437,55 +471,39 @@ def getPosition(node):
     try: return node["Position"][1]
     except KeyError: node = node["_parent"]
 
-def cdnLoader(asset):
-  if not asset: return
+def meshLoader(root):
+  def recurs(node):
+    id, childs, className, name = node["_id"], node["_childs"], node["_class"], node["Name"][1]
+    data = {k: v for k, v in node.items() if k not in {"_id", "_parent", "_childs", "_class", "Name"}}
+    if className == "MeshPart":
+      # print("%s %s %s\n" % (id, name, data))
+      # node["CFrame"][1]
+      #print(node["size"][1], node["VertexCount"][1], node["TextureID"][1], node["MeshId"][1], node["Transparency"][1], node["DoubleSided"][1], "\n")
+      mesh = cdnLoader(node["MeshId"][1])
+      tex = cdnLoader(node["TextureID"][1])
+      if mesh:
+        model = meshReader(mesh)
+        if model:
+          VBOdata, IBOdata = model
+          models.append((VBOdata, IBOdata, tex))
+    for child in childs: recurs(child)
+  models = []
+  recurs(root)
 
-  pos = len(asset) - 1
-  while pos > 0 and asset[pos] in "0123456789": pos -= 1
-  if asset[pos] not in "0123456789": pos += 1
-  ID = asset[pos:]
-  if not ID: return
+  models2 = []
+  for VBOdata, IBOdata, tex in models:
+    model = Model(VBOdata, IBOdata)
+    model = TranslateModel(model, (2, 0, 0))
+    if tex: model = TexturedModel(model, newTexture2(tex))
+    models2.append(model)
+  return models2
 
-  assetURL = "https://assetdelivery.roblox.com/v1/assetId/%s" % ID
-  print(assetURL)
-
-  memory = storager.get(assetURL)
-  if memory is not None:
-    print("CACHE!")
-    cdn, content = memory
-    return content
-
-  print("NETWORK!")
-  status, response = NetworkRequests(assetURL)
-  print("status:", status)
-  if status not in range(200, 300): exit("Status error: %s\n%s" % (status, response))
-  obj = json.load(response)
-  print(obj)
-
-  status, content = NetworkRequests(obj["location"])
-  print("status:", status)
-  if status not in range(200, 300): exit("Status error: %s\n%s" % (status, response))
-
-  storager.put(assetURL, response, content)
-  return content
-
-def meshLoader(node = root):
-  id, childs, className, name = node["_id"], node["_childs"], node["_class"], node["Name"][1]
-  data = {k: v for k, v in node.items() if k not in {"_id", "_parent", "_childs", "_class", "Name"}}
-  if className == "MeshPart":
-    # print("%s %s %s\n" % (id, name, data))
-    # node["CFrame"][1]
-    #print(node["size"][1], node["VertexCount"][1], node["TextureID"][1], node["MeshId"][1], node["Transparency"][1], node["DoubleSided"][1], "\n")
-    cdnLoader(node["TextureID"][1])
-    cdnLoader(node["MeshId"][1])
-  for child in childs: meshLoader(child)
-
-def Chunk(file):
-  global SStrings
+def Chunk(file, CTX):
+  SStrings, classes, root, instances = CTX
 
   name, compressL, uncompressL, reserved = file.unpack("<4sII4s")
   while name[-1] == 0: name = name[:-1]
-  print("Чанк %r длины %s -> %s" % (name, compressL, uncompressL))
+  if dbgPrint: print("Чанк %r длины %s -> %s" % (name, compressL, uncompressL))
   if reserved != b"\0" * 4: exit("Странный reserved чанка: %s" % reserved.hex())
 
   compressed = compressL > 0
@@ -501,13 +519,13 @@ def Chunk(file):
   content = BytesIO(data)
   if name == b"META":
     meta = META(content)
-    print(meta)
+    if dbgPrint: print(meta)
   elif name == b"SSTR":
-    SStrings = SSTR(content)
-    print(SStrings)
+    SSTR(content, SStrings)
+    if dbgPrint: print(SStrings)
   elif name == b"INST":
     classID, className, objectFormat, referents, markers = INST(content)
-    print(classID, className, "service" if objectFormat else "regular", referents, markers)
+    if dbgPrint: print(classID, className, "service" if objectFormat else "regular", referents, markers)
     inst = className, objectFormat, referents, markers
     try:
       conflict = classes[classID]
@@ -521,15 +539,21 @@ def Chunk(file):
         exit("Конфликтный referent %r: %r <-> %r" % (referent, conflict, data))
       except: instances[referent] = data
   elif name == b"PROP":
-    PROP(content)
+    PROP(content, CTX)
   elif name == b"PRNT":
-    PRNT(content)
+    PRNT(content, instances)
   elif name == b"END":
     if data != b'</roblox>': print("Странное окончание: %r" % data)
     return True
   else: exit("UNKNOWN CHUNK (%r): %r" % (name, data))
 
 def rbxmReader(resource):
+  SStrings = []
+  classes = {}
+  root = {"_id": -1, "_parent": "x", "_childs": [], "_class": "root", "Name": (1, "root")}
+  instances = {-1: root}
+  CTX = (SStrings, classes, root, instances)
+
   file = BytesIO(resource)
   if file.read(8) != b'<roblox!': exit("Это не rbxm!")
   sign = file.read(6).hex()
@@ -540,15 +564,24 @@ def rbxmReader(resource):
   if version != 0: exit("Странная версия заголовка: %s" % version)
   if reserved != b"\0" * 8: exit("Странный reserved заголовка: %s" % reserved.hex())
   while True:
-    end = Chunk(file)
+    end = Chunk(file, CTX)
     if end: break
+  return root
 
-print("🐾🐾🐾")
-rbxmReader(__resource("avatar.rbxm"))
-#printTree2()
-meshLoader()
-print("🐾🐾🐾")
-exit()
+def loadRBXM(resource, name):
+  cache = STORAGE("rbxm_cache")
+  T = time()
+  print("🐾🐾🐾")
+  try: root = cache[name]
+  except KeyError: root = None
+  if root is None:
+    root = rbxmReader(resource)
+    #printTree2(root)
+    cache[name] = root
+  models = meshLoader(root)
+  print(models)
+  print("🐾🐾🐾", time() - T)
+  return models
 
 """
 Проверка самодельного BytesIO и pack/unpack функций внутри.
