@@ -10,10 +10,12 @@ os.chdir(os.path.dirname(__file__))
 
 paths = (
   ("PMY.py", None),
-  ("resources/textures.png", None),
+  ("packToZip.py", None),
   ("modules/myGL.py", None),
   ("modules/myGLclasses.py", None),
-  ("packToZip.py", None),
+  ("modules/rbxmReader.py", None),
+  ("resources/textures.png", None),
+  ("resources/avatar.rbxm", None),
 )
 
 zip_filename = "PMY_name.zip"

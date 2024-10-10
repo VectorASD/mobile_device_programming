@@ -1,3 +1,4 @@
+from byte import BYTE
 from int import INT
 from float import FLOAT 
 from double import DOUBLE
@@ -17,6 +18,7 @@ from java.lang.Math import Math
 from android.graphics.BitmapFactory import BitmapFactory
 from android.graphics.BitmapFactory_._Options import BitmapFactoryOptions
 
+BYTEarr = ()._a_byte
 INTarr = ()._a_int # INT.new_array(0)
 FLOATarr = ()._a_float
 
