@@ -13,7 +13,7 @@ def readVertexes36(mesh, numVerts):
     px, py, pz, nx, ny, nz, tU, tV, tx, ty, tz, ts = mesh.unpack("<8f4b")
     tx /= 127; ty /= 127; tz /= 127; ts /= 127
     VBOdata.extend((px, py, pz, 1, 1, 1, 1, tU, tV))
-    if i < 10: printVertex(px, py, pz, nx, ny, nz, tU, tV, tx, ty, tz, ts)
+    #if i < 10: printVertex(px, py, pz, nx, ny, nz, tU, tV, tx, ty, tz, ts)
   return VBOdata
 
 def readVertexes40(mesh, numVerts):
@@ -23,7 +23,7 @@ def readVertexes40(mesh, numVerts):
     tx /= 127; ty /= 127; tz /= 127; ts /= 127
     r /= 255; g /= 255; b /= 255; a /= 255
     VBOdata.extend((px, py, pz, r, g, b, a, tU, tV))
-    if i < 10: printVertex(px, py, pz, nx, ny, nz, tU, tV, tx, ty, tz, ts, r, g, b, a)
+    #if i < 10: printVertex(px, py, pz, nx, ny, nz, tU, tV, tx, ty, tz, ts, r, g, b, a)
   return VBOdata
 
 def meshFaces(mesh, numFaces):
@@ -55,10 +55,13 @@ def meshReader3_00(mesh):
   # print("LODs size:", c)
   # print("all:", a + b + c)
   # print("доступно:", len(mesh.read())) сошлось с параметром "all"
+  print("Вершин:", numVerts, "Полигонов:", numFaces, "Уровней детализации:", numLODs - 1)
   VBOdata = readVertexes36(mesh, numVerts) if sizeof_Vertex == 36 else readVertexes40(mesh, numVerts)
   IBOdata = meshFaces(mesh, numFaces)
   LODs = mesh.unpack("<%sI" % numLODs)
   print("LODs:", LODs)
+  a, b = LODs[0], LODs[1]
+  IBOdata = IBOdata[a*3 : b*3]
   print("🙂‍↔️🙂‍↔️🙂‍↔️")
   return VBOdata, IBOdata
 
@@ -75,6 +78,6 @@ def meshReader(mesh):
 
   model = None
   if version == b"version 2.00": model = meshReader2_00(mesh)
-  elif version == b"version 3.00": model = meshReader3_00(mesh)
+  elif version in (b"version 3.00", b"version 3.01"): model = meshReader3_00(mesh)
   else: print("UNKNOWN MESH VERSION: %s" % version)
   return model
