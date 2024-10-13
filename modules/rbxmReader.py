@@ -2,6 +2,7 @@ from net.jpountz.lz4.LZ4Factory import LZ4Factory
 from java.net.URL import URL
 #from java.io.InputStreamReader import InputStreamReader
 import rbxmMeshReader
+import rbxmLoader
 
 LZ4factory = LZ4Factory._m_fastestJavaInstance()
 LZ4decompressor = LZ4factory._m_fastDecompressor()
@@ -9,14 +10,16 @@ LZ4decompress = LZ4decompressor._mw_decompress(BYTEarr, int, BYTEarr, int, int) 
 
 
 
-def NetworkRequests(url):
+def NetworkRequests(url, contentType):
   conn = URL(url)._m_openConnection()
   conn._m_setRequestMethod("GET")
-  conn._m_setRequestProperty("Content-Type", "application/json")
+  conn._m_setRequestProperty("Content-Type", contentType)
   conn._m_setConnectTimeout(5000)
   conn._m_setReadTimeout(5000)
   conn._m_setInstanceFollowRedirects(False)
   status = conn._m_getResponseCode()
+  # print(conn)
+  # print(conn._m_getContentType())
 
   chunkL = 1024
   chunk = BYTE.new_array(chunkL)
@@ -78,13 +81,15 @@ storager = Storager()
 
 
 def cdnLoader(asset):
-  if not asset: return
+  if type(asset) is not int:
+    if not asset: return
 
-  pos = len(asset) - 1
-  while pos > 0 and asset[pos] in "0123456789": pos -= 1
-  if asset[pos] not in "0123456789": pos += 1
-  ID = asset[pos:]
-  if not ID: return
+    pos = len(asset) - 1
+    while pos > 0 and asset[pos] in "0123456789": pos -= 1
+    if asset[pos] not in "0123456789": pos += 1
+    ID = asset[pos:]
+    if not ID: return
+  else: ID = asset
 
   assetURL = "https://assetdelivery.roblox.com/v1/assetId/%s" % ID
   print(assetURL)
@@ -96,18 +101,22 @@ def cdnLoader(asset):
     return content
 
   # print("NETWORK!")
-  status, response = NetworkRequests(assetURL)
+  status, response = NetworkRequests(assetURL, "application/json")
   print("status:", status)
   if status not in range(200, 300): exit("Status error: %s\n%s" % (status, response))
   obj = json.load(response)
   print(obj)
 
-  status, content = NetworkRequests(obj["location"])
+  status, content = NetworkRequests(obj["location"], "binary/octet-stream")
   print("status:", status)
   if status not in range(200, 300): exit("Status error: %s\n%s" % (status, response))
 
   storager.put(assetURL, response, content)
   return content
+
+# cdnLoader(6023979233)
+# cdnLoader(6246085453)
+# exit()
 
 
 
@@ -335,6 +344,11 @@ PROP_types = {
   # всё, что после 0x21: не существует
 }
 
+def CFrame2mat(CFrame):
+  if CFrame is None: return (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)._a_float
+  x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = CFrame
+  return (r00, r10, r20, 0, r01, r11, r21, 0, r02, r12, r22, 0, x, y, z, 1)._a_float
+
 
 
 
@@ -466,38 +480,6 @@ def printTree2(node, lvl = ""):
   lvl += "| "
   for child in childs: printTree2(child, lvl)
 
-def getPosition(node):
-  while node["_id"] >= 0:
-    try: return node["Position"][1]
-    except KeyError: node = node["_parent"]
-
-def meshLoader(root):
-  def recurs(node):
-    id, childs, className, name = node["_id"], node["_childs"], node["_class"], node["Name"][1]
-    data = {k: v for k, v in node.items() if k not in {"_id", "_parent", "_childs", "_class", "Name"}}
-    if className == "MeshPart":
-      # print("%s %s %s\n" % (id, name, data))
-      # node["CFrame"][1]
-      #print(node["size"][1], node["VertexCount"][1], node["TextureID"][1], node["MeshId"][1], node["Transparency"][1], node["DoubleSided"][1], "\n")
-      mesh = cdnLoader(node["MeshId"][1])
-      tex = cdnLoader(node["TextureID"][1])
-      if mesh:
-        model = meshReader(mesh)
-        if model:
-          VBOdata, IBOdata = model
-          models.append((VBOdata, IBOdata, tex))
-    for child in childs: recurs(child)
-  models = []
-  recurs(root)
-
-  models2 = []
-  for VBOdata, IBOdata, tex in models:
-    model = Model(VBOdata, IBOdata)
-    model = TranslateModel(model, (2, 0, 0))
-    if tex: model = TexturedModel(model, newTexture2(tex))
-    models2.append(model)
-  return models2
-
 def Chunk(file, CTX):
   SStrings, classes, root, instances = CTX
 
@@ -578,7 +560,7 @@ def loadRBXM(resource, name):
     root = rbxmReader(resource)
     #printTree2(root)
     cache[name] = root
-  models = meshLoader(root)
+  models = modelLoader(root)
   print(models)
   print("🐾🐾🐾", time() - T)
   return models

@@ -167,7 +167,7 @@ def figures():
      4,  7,  5,  5,  7,  6, # верх куба
   ))
 
-  return triangles, ScaleModel(cube, (0.5, 1, 0.5))
+  return NoCullFaceModel(triangles), ScaleModel(cube, (0.5, 1, 0.5))
 
 
 

@@ -21,8 +21,8 @@ def readVertexes40(mesh, numVerts):
   for i in range(numVerts):
     px, py, pz, nx, ny, nz, tU, tV, tx, ty, tz, ts, r, g, b, a = mesh.unpack("<8f4b4B")
     tx /= 127; ty /= 127; tz /= 127; ts /= 127
-    r /= 255; g /= 255; b /= 255; a /= 255
-    VBOdata.extend((px, py, pz, r, g, b, a, tU, tV))
+    # tU = tV = -1
+    VBOdata.extend((px, py, pz, r / 255, g / 255, b / 255, a / 255, tU, tV))
     #if i < 10: printVertex(px, py, pz, nx, ny, nz, tU, tV, tx, ty, tz, ts, r, g, b, a)
   return VBOdata
 
@@ -30,6 +30,9 @@ def meshFaces(mesh, numFaces):
   IBOdata = mesh.unpack("<%sI" % (numFaces * 3))
   #print(IBOdata[:30])
   return IBOdata
+
+def Envelope(mesh, numVerts):
+  return [(mesh.read(4), mesh.read(4)) for i in range(numVerts)]
 
 
 
@@ -40,10 +43,11 @@ def meshReader2_00(mesh):
   if sizeof_Face != 12: exit("Странный sizeof_Face: %s" % sizeof_Face)
   VBOdata = readVertexes36(mesh, numVerts) if sizeof_Vertex == 36 else readVertexes40(mesh, numVerts)
   IBOdata = meshFaces(mesh, numFaces)
+  what = mesh.read()
+  if what: exit("Не до конца считанная сетка v2.00: %s" % mesh.hex())
   return VBOdata, IBOdata
 
 def meshReader3_00(mesh):
-  print("🙂‍↔️🙂‍↔️🙂‍↔️")
   sizeof_MeshHeader, sizeof_Vertex, sizeof_Face, sizeof_LOD, numLODs, numVerts, numFaces = mesh.unpack("<HBBHHII")
   if sizeof_MeshHeader != 16: exit("Странный sizeof_MeshHeader v3.00: %s" % sizeof_MeshHeader)
   if sizeof_Vertex not in (36, 40): exit("Странный sizeof_Vertex: %s" % sizeof_Vertex)
@@ -57,6 +61,23 @@ def meshReader3_00(mesh):
   # print("доступно:", len(mesh.read())) сошлось с параметром "all"
   print("Вершин:", numVerts, "Полигонов:", numFaces, "Уровней детализации:", numLODs - 1)
   VBOdata = readVertexes36(mesh, numVerts) if sizeof_Vertex == 36 else readVertexes40(mesh, numVerts)
+  IBOdata = meshFaces(mesh, numFaces)
+  LODs = mesh.unpack("<%sI" % numLODs)
+  print("LODs:", LODs)
+  what = mesh.read()
+  if what: exit("Не до конца считанная сетка v3.00: %s" % mesh.hex())
+  a, b = LODs[0], LODs[1]
+  IBOdata = IBOdata[a*3 : b*3]
+  return VBOdata, IBOdata
+
+def meshReader4_00(mesh):
+  print("🙂‍↔️🙂‍↔️🙂‍↔️")
+  sizeof_MeshHeader, lodType, numVerts, numFaces, numLODs, numBones, sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs, unused = mesh.unpack("<HHIIHHIHBB")
+  if sizeof_MeshHeader != 24: exit("Странный sizeof_MeshHeader v4.00: %s" % sizeof_MeshHeader)
+  if unused: exit("Странный unused: %s" % unused)
+  print(lodType, numVerts, numFaces, numLODs, numBones, sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs)
+  VBOdata = readVertexes40(mesh, numVerts)
+  if numBones: Envelope(mesh, numVerts)
   IBOdata = meshFaces(mesh, numFaces)
   LODs = mesh.unpack("<%sI" % numLODs)
   print("LODs:", LODs)
@@ -79,5 +100,6 @@ def meshReader(mesh):
   model = None
   if version == b"version 2.00": model = meshReader2_00(mesh)
   elif version in (b"version 3.00", b"version 3.01"): model = meshReader3_00(mesh)
+  elif version in (b"version 4.00", b"version 4.01"): model = meshReader4_00(mesh)
   else: print("UNKNOWN MESH VERSION: %s" % version)
   return model

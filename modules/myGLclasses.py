@@ -95,6 +95,21 @@ class ScaleModel:
 
 
 
+class MatrixModel:
+  def __init__(self, model, matrix):
+    self.model = model
+    self.matrix = matrix
+
+  def recalc(self, location, mat):
+    sMat = FLOAT.new_array(16)
+    multiplyMM(sMat, 0, mat, 0, self.matrix, 0)
+    self.model.recalc(location, sMat)
+
+  def draw(self, func = None):
+    self.model.draw(func)
+
+
+
 class TexturedModel:
   def __init__(self, model, textureID):
     self.model = model
@@ -106,6 +121,20 @@ class TexturedModel:
   def draw(self, func = None):
     glBindTexture(GL_TEXTURE_2D, self.textureID)
     self.model.draw(func)
+
+
+
+class NoCullFaceModel:
+  def __init__(self, model):
+    self.model = model
+
+  def recalc(self, location, mat):
+    self.model.recalc(location, mat)
+
+  def draw(self, func = None):
+    glDisable(GL_CULL_FACE)
+    self.model.draw(func)
+    glEnable(GL_CULL_FACE)
 
 
 
