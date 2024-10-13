@@ -335,9 +335,11 @@ decodeResource = BitmapFactory._mw_decodeResource(Resources, int, BitmapFactoryO
 decodeByteArray = BitmapFactory._mw_decodeByteArray(BYTEarr, int, int, BitmapFactoryOptions) # data, offset, length, opts
 glUtilsTexImage2D = GLUtils._mw_texImage2D(int, int, Bitmap, int) # target, level, bitmap, border
 
+texture2size = {}
+
 def _newTexture(bitmap, filter):
+  size = bitmap._m_getWidth(), bitmap._m_getHeight()
   """
-  W, H = bitmap._m_getWidth(), bitmap._m_getHeight()
   pixels = INT.new_array(W * H)
   bitmap._m_getPixels(pixels, 0, W, 0, 0, W, H) # pixels, offset, stride, x, y, width, height
   # byteCount = bitmap._m_getByteCount()
@@ -348,6 +350,7 @@ def _newTexture(bitmap, filter):
   ids = INT.new_array(1)
   glGenTextures(1, ids, 0)
   textureId = ids[0]
+  texture2size[textureId] = size
 
   glBindTexture(GL_TEXTURE_2D, textureId)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter)
@@ -389,13 +392,15 @@ def checkFrameBuffer():
     print2("💥 FBO error:", status, "(%s)" % GL_errors[status])
   else: print2("✅ FBO ok")
 
-def newFrameBuffer(width, height, depthTest = True):
+def newFrameBuffer(width, height, depthTest = True, oldFBO = None, filter = GL_NEAREST):
   arr = INT.new_array(3)
-  glGenFramebuffers(1, arr, 0)
+  if oldFBO is None: glGenFramebuffers(1, arr, 0)
+  else: arr[0] = oldFBO
   glGenTextures(1, arr, 1)
   if depthTest: glGenRenderbuffers(1, arr, 2)
   # glGenRenderbuffers(1, arr, 3)
   fbo, textureId, rbo = arr
+  texture2size[textureId] = width, height
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo)
 
@@ -403,8 +408,8 @@ def newFrameBuffer(width, height, depthTest = True):
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, None)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter)
   glBindTexture(GL_TEXTURE_2D, 0)
 
   if depthTest:
@@ -431,6 +436,7 @@ def newFrameBuffer(width, height, depthTest = True):
 
 def deleteFrameBuffer(arr):
   fbo, textureId, rbo = arr
+  texture2size[textureId] = -1, -1
   depthTest = rbo > 0
   glDeleteFramebuffers(1, arr, 0)
   glDeleteTextures(1, arr, 1)

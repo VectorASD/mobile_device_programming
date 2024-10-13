@@ -167,7 +167,7 @@ def figures():
      4,  7,  5,  5,  7,  6, # верх куба
   ))
 
-  return NoCullFaceModel(triangles), ScaleModel(cube, (0.5, 1, 0.5))
+  return triangles, cube
 
 
 
@@ -219,16 +219,24 @@ class myRenderer:
 
     self.calcViewMatrix()
 
-    self.models = figures()
-
     textures = rm.get("drawable/textures")
     self.mainTexture = mainTextures = newTexture(ctxResources, textures)
     print("textures:", hex(textures), mainTextures)
 
     self.program2 = d2textureProgram(mainTextures)
     self.skybox = skyBoxLoader(self.program2)
+    self.textureChain = TextureChain()
 
-    self.rbxModels = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm")
+    self.rbxModels = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", self.textureChain)
+
+    triangles, cube = figures()
+    fboTex = lambda: self.FBO[1]
+    self.models = (
+      NoCullFaceModel(triangles),
+      TexturedModel(ScaleModel(cube, (0.5, 1, 0.5)), fboTex),
+      TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (-2, 0, 0)), dbgTextures[0]),
+      TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (-4.5, 0, 0)), dbgTextures[1]),
+    )
 
   def onSurfaceChanged(self, gl10, width, height):
     print("📽️ onSurfaceChanged", gl10, width, height)
@@ -292,7 +300,6 @@ class myRenderer:
     #glUniform1i(program[2]["uTexture"], 0)
     #checkGLError()
 
-    glBindTexture(GL_TEXTURE_2D, self.FBO[1])
     for model in self.models: model.draw()
     for model in self.rbxModels: model.draw()
 

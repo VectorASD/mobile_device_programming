@@ -419,11 +419,12 @@ def PROP(content, CTX):
     try: node = instances[id]
     except KeyError: exit("Нет экземпляра с таким id: %s" % id)
     try:
-      conflict = node[propertyName]
+      conflict = node["_props"][propertyName]
       exit("Повторяющийся параметр %r: %r <-> %r" % (propertyName, conflict, value))
     except KeyError:
       #if dbgType is None or typeID == dbgType or propertyName == "Name":
-      node[propertyName] = typeID, value
+      if propertyName == "Name": node["_name"] = checkString((typeID, value))
+      else: node["_props"][propertyName] = typeID, value
 
   if dbgType is None:
     if Type is not None:
@@ -461,8 +462,8 @@ def PRNT(content, instances): # parents
 
 
 def printTree(node, lvl = "", check = False):
-  id, parent, childs, className, name = node["_id"], node["_parent"], node["_childs"], node["_class"], node["Name"][1]
-  data = {k: v for k, v in node.items() if k not in {"_id", "_parent", "_childs", "_class", "Name"}}
+  id, parent, childs, className, name = node["_id"], node["_parent"], node["_childs"], node["_class"], node["_name"]
+  data = node["_props"]
   data = {k: v for k, (t, v) in data.items() if dbgType is None or t == dbgType}
 
   checked = dbgType is None or any(printTree(child, "", True) for child in childs)
@@ -473,9 +474,8 @@ def printTree(node, lvl = "", check = False):
   for child in childs: printTree(child, lvl)
 
 def printTree2(node, lvl = ""):
-  id, childs, className, name = node["_id"], node["_childs"], node["_class"], node["Name"][1]
-  # data = {k: v for k, v in node.items() if k not in {"_id", "_parent", "_childs", "_class", "Name"}}
-  data = ""
+  id, childs, className, name = node["_id"], node["_childs"], node["_class"], node["_name"]
+  data = "" # node["_props"]
   print("%s%s %s (%s) %s" % (lvl, id, name, className, data))
   lvl += "| "
   for child in childs: printTree2(child, lvl)
@@ -515,7 +515,7 @@ def Chunk(file, CTX):
     except KeyError: classes[classID] = inst
 
     for referent in referents:
-      data = {"_id": referent, "_parent": None, "_childs": [], "_class": className}
+      data = {"_id": referent, "_parent": None, "_childs": [], "_class": className, "_name": "🤔", "_props": {}}
       try:
         conflict = instances[referent]
         exit("Конфликтный referent %r: %r <-> %r" % (referent, conflict, data))
@@ -532,7 +532,7 @@ def Chunk(file, CTX):
 def rbxmReader(resource):
   SStrings = []
   classes = {}
-  root = {"_id": -1, "_parent": "x", "_childs": [], "_class": "root", "Name": (1, "root")}
+  root = {"_id": -1, "_parent": "x", "_childs": [], "_class": "root", "_name": "root", "_props": {}}
   instances = {-1: root}
   CTX = (SStrings, classes, root, instances)
 
@@ -550,7 +550,7 @@ def rbxmReader(resource):
     if end: break
   return root
 
-def loadRBXM(resource, name):
+def loadRBXM(resource, name, textureChain):
   cache = STORAGE("rbxm_cache")
   T = time()
   print("🐾🐾🐾")
@@ -558,10 +558,10 @@ def loadRBXM(resource, name):
   except KeyError: root = None
   if root is None:
     root = rbxmReader(resource)
-    #printTree2(root)
     cache[name] = root
-  models = modelLoader(root)
-  print(models)
+  # printTree(root)
+  models = modelLoader(root, name, textureChain)
+  print("models:", len(models))
   print("🐾🐾🐾", time() - T)
   return models
 

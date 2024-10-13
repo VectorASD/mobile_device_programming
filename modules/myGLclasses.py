@@ -9,7 +9,12 @@ class Model:
     Model.vColor    = attribs["vColor"]
     Model.vUV       = attribs["vUV"]
 
-  def __init__(self, VBOdata, IBOdata):
+  def __init__(self, VBOdata, IBOdata = None):
+    if IBOdata is None and len(VBOdata) == 3:
+      self.data = VBOdata
+      self.matrix = None
+      return
+
     buffers = INT.new_array(2)
     glGenBuffers(2, buffers, 0)
     VBO, IBO = buffers
@@ -60,6 +65,9 @@ class Model:
     buffers = (VBO, IBO)._a_int
     glDeleteBuffers(2, buffers, 0)
     print2("♻️ buffers:", buffers[:])
+  
+  def clone(self):
+    return Model(self.data)
 
 
 
@@ -74,8 +82,10 @@ class TranslateModel:
     translateM2(tMat, 0, mat, 0, x, y, z)
     self.model.recalc(location, tMat)
 
-  def draw(self, func = None):
-    self.model.draw(func)
+  def draw(self, func = None): self.model.draw(func)
+  def delete(self): self.model.delete()
+  def clone(self):
+    return TranslateModel(self.model.clone(), self.model)
 
 
 
@@ -90,8 +100,10 @@ class ScaleModel:
     scaleM2(sMat, 0, mat, 0, x, y, z)
     self.model.recalc(location, sMat)
 
-  def draw(self, func = None):
-    self.model.draw(func)
+  def draw(self, func = None): self.model.draw(func)
+  def delete(self): self.model.delete()
+  def clone(self):
+    return ScaleModel(self.model.clone(), self.scale)
 
 
 
@@ -105,8 +117,10 @@ class MatrixModel:
     multiplyMM(sMat, 0, mat, 0, self.matrix, 0)
     self.model.recalc(location, sMat)
 
-  def draw(self, func = None):
-    self.model.draw(func)
+  def draw(self, func = None): self.model.draw(func)
+  def delete(self): self.model.delete()
+  def clone(self):
+    return MatrixModel(self.model.clone(), self.matrix)
 
 
 
@@ -119,8 +133,14 @@ class TexturedModel:
     self.model.recalc(location, mat)
 
   def draw(self, func = None):
-    glBindTexture(GL_TEXTURE_2D, self.textureID)
+    texture = self.textureID
+    if texture.isdef(): texture = texture()
+    glBindTexture(GL_TEXTURE_2D, texture)
     self.model.draw(func)
+
+  def delete(self): self.model.delete()
+  def clone(self):
+    return TexturedModel(self.model.clone(), self.textureID)
 
 
 
@@ -135,6 +155,9 @@ class NoCullFaceModel:
     glDisable(GL_CULL_FACE)
     self.model.draw(func)
     glEnable(GL_CULL_FACE)
+
+  def delete(self): self.model.delete()
+  def clone(self): return self.model.clone()
 
 
 
@@ -203,6 +226,7 @@ class SkyBox:
     arr = INT.new_array(1)
     glGenTextures(1, arr, 0)
     self.textureId = textureId = arr[0]
+    texture2size[textureId] = width, height
     glBindTexture(GL_TEXTURE_CUBE_MAP, textureId)
     #checkGLError() ok
 
@@ -227,9 +251,7 @@ class SkyBox:
     if SkyBox.program is None:
       SkyBox.program = checkProgram(newProgram("""
 attribute vec3 vPosition;
-
 uniform mat4 uVPMatrix;
-
 varying vec3 TexCoords;
 
 void main() {
@@ -239,9 +261,7 @@ void main() {
 }
 """, """
 precision mediump float;
-
 varying vec3 TexCoords;
-
 uniform samplerCube uSkybox;
 
 void main() {             
@@ -304,7 +324,7 @@ def skyBoxLoader(gridProgram, dbg = False):
   glBindFramebuffer(GL_FRAMEBUFFER, fbo[0])
   glViewport(0, 0, 32, 32)
   #glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-  glClear(GL_DEPTH_BUFFER_BIT)
+  #glClear(GL_DEPTH_BUFFER_BIT) а смысл, если в FBO нет рендер-буфера глубины
 
   def textureCutter(n):
     id = (4, 50, 384, 65, 78, 401)[n]
@@ -333,3 +353,84 @@ def skyBoxLoader(gridProgram, dbg = False):
 glDepthFunc = GLES20._mw_glDepthFunc(int) # func
 GL_LEQUAL = GLES20._f_GL_LEQUAL
 GL_LESS = GLES20._f_GL_LESS
+
+
+
+class TextureChain:
+  def __init__(self):
+    self.genProgram()
+    self.genModel()
+    # self.FBOs = {}
+    self.FBO = None
+
+  def genProgram(self):
+    self.program = program, attribs, uniforms = checkProgram(newProgram("""
+attribute vec2 vPosition;
+attribute vec2 vUV;
+varying vec2 vaUV;
+
+void main() {
+  gl_Position = vec4(vPosition, 0., 1.);
+  vaUV = vUV;
+}
+""", """
+precision mediump float;
+varying vec2 vaUV;
+uniform sampler2D uTexture;
+uniform vec4 uTextureColor;
+
+void main() {
+    gl_FragColor = texture2D(uTexture, vaUV) * uTextureColor;
+}
+""", ('vPosition', 'vUV'), ('uTexture', 'uTextureColor')))
+    self.vPosition = attribs["vPosition"]
+    self.vUV = attribs["vUV"]
+    self.uTexture = uniforms["uTexture"]
+    self.uTextureColor = uniforms["uTextureColor"]
+
+  def genModel(self):
+    self.model = Model((
+      -1, -1, 0, 0,
+      -1, 1, 0, 1,
+      1, -1, 1, 0,
+      1, 1, 1, 1,
+    ), (0, 1, 2, 1, 2, 3))
+    def func():
+      glVertexAttribPointer(self.vPosition, 2, GL_FLOAT, False, 4 * 4, 0)
+      glVertexAttribPointer(self.vUV,       2, GL_FLOAT, False, 4 * 4, 2 * 4)
+    self.func = func
+
+  def use(self, size, baseColor, textures = ()):
+    W, H = size
+    # try: fbo = self.FBOs[size]
+    # except KeyError: fbo = self.FBOs[size] = newFrameBuffer(W, H, False)
+    fbo, texture, _ = newFrameBuffer(W, H, False, self.FBO, GL_LINEAR)
+    self.FBO = fbo
+
+    oldViewportParams = INT.new_array(4)
+    glGetIntegerv(GL_VIEWPORT, oldViewportParams, 0)
+
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo)
+    glViewport(0, 0, W, H)
+    r, g, b, a = baseColor
+    glClearColor(r, g, b, a)
+    glClear(GL_COLOR_BUFFER_BIT)
+    glDisable(GL_CULL_FACE)
+    glDisable(GL_DEPTH_TEST)
+
+    enableProgram(self.program)
+    glUniform1f(self.uTexture, 0)
+    draw, func = self.model.draw, self.func
+    for texture2, textureColor in textures:
+      r, g, b, a = textureColor
+      glUniform4f(self.uTextureColor, r, g, b, a)
+      glBindTexture(GL_TEXTURE_2D, texture2)
+      draw(func)
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0)
+    x, y, w, h = oldViewportParams
+    glViewport(x, y, w, h)
+    glEnable(GL_CULL_FACE)
+    glEnable(GL_DEPTH_TEST)
+
+    return texture

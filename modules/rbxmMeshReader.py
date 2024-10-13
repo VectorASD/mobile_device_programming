@@ -70,20 +70,45 @@ def meshReader3_00(mesh):
   IBOdata = IBOdata[a*3 : b*3]
   return VBOdata, IBOdata
 
-def meshReader4_00(mesh):
-  print("🙂‍↔️🙂‍↔️🙂‍↔️")
-  sizeof_MeshHeader, lodType, numVerts, numFaces, numLODs, numBones, sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs, unused = mesh.unpack("<HHIIHHIHBB")
-  if sizeof_MeshHeader != 24: exit("Странный sizeof_MeshHeader v4.00: %s" % sizeof_MeshHeader)
-  if unused: exit("Странный unused: %s" % unused)
-  print(lodType, numVerts, numFaces, numLODs, numBones, sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs)
+def meshReaderBase4_5(mesh, numVerts, numFaces, numLODs, numBones):
   VBOdata = readVertexes40(mesh, numVerts)
   if numBones: Envelope(mesh, numVerts)
   IBOdata = meshFaces(mesh, numFaces)
   LODs = mesh.unpack("<%sI" % numLODs)
   print("LODs:", LODs)
-  a, b = LODs[0], LODs[1]
+  a, b = LODs[0], LODs[1] # выбираю LOD с самым высоким разрешением
   IBOdata = IBOdata[a*3 : b*3]
+  return VBOdata, IBOdata
+
+def meshReader4_00(mesh):
   print("🙂‍↔️🙂‍↔️🙂‍↔️")
+  sizeof_MeshHeader, lodType, numVerts, numFaces, numLODs, numBones, sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs, unused = mesh.unpack("<HHIIHHIHBB")
+  if sizeof_MeshHeader != 24: exit("Странный sizeof_MeshHeader v4.00: %s" % sizeof_MeshHeader)
+  if unused: exit("Странный unused: %s" % unused)
+
+  lodTypeName = {0: "None", 1: "Unknown", 2: "RbxSimplifier", 3: "ZeuxMeshOptimizer"}.get(lodType, "?%s" % lodType)
+  print("LOD type:", lodTypeName)
+  print("Вершин:", numVerts, "Полигонов:", numFaces, "Уровней детализации:", numLODs - 1)
+  print("Костей:", numBones, "...", sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs)
+
+  VBOdata, IBOdata = meshReaderBase4_5(mesh, numVerts, numFaces, numLODs, numBones)
+  print("🙂‍↔️🙂‍↔️🙂‍↔️")
+  return VBOdata, IBOdata
+
+def meshReader5_00(mesh):
+  print("🙂‍↔️🔥🙂‍↔️")
+  sizeof_MeshHeader, lodType, numVerts, numFaces, numLODs, numBones, sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs, unusedPadding, facsDataFormat, facsDataSize = mesh.unpack("<HHIIHHIHBBII")
+  if sizeof_MeshHeader != 32: exit("Странный sizeof_MeshHeader v5.00: %s" % sizeof_MeshHeader)
+  if unusedPadding: exit("Странный unusedPadding: %s" % unusedPadding)
+
+  lodTypeName = {0: "None", 1: "Unknown", 2: "RbxSimplifier", 3: "ZeuxMeshOptimizer"}.get(lodType, "?%s" % lodType)
+  print("LOD type:", lodTypeName)
+  print("Вершин:", numVerts, "Полигонов:", numFaces, "Уровней детализации:", numLODs - 1)
+  print("Костей:", numBones, "...", sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs)
+  print("Facial Action Coding System:", facsDataFormat, facsDataSize)
+
+  VBOdata, IBOdata = meshReaderBase4_5(mesh, numVerts, numFaces, numLODs, numBones)
+  print("🙂‍↔️🔥🙂‍↔️")
   return VBOdata, IBOdata
 
 
@@ -101,5 +126,6 @@ def meshReader(mesh):
   if version == b"version 2.00": model = meshReader2_00(mesh)
   elif version in (b"version 3.00", b"version 3.01"): model = meshReader3_00(mesh)
   elif version in (b"version 4.00", b"version 4.01"): model = meshReader4_00(mesh)
+  elif version == b"version 5.00": model = meshReader5_00(mesh)
   else: print("UNKNOWN MESH VERSION: %s" % version)
   return model
