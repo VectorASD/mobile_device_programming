@@ -167,7 +167,42 @@ def figures():
      4,  7,  5,  5,  7,  6, # верх куба
   ))
 
-  return triangles, cube
+  gridN = 8
+  gridRange = range(gridN)
+  faces = []
+  facesAppend = faces.append
+  for x in gridRange:
+    for z in gridRange:
+      x1, x2 = x / gridN * 2 - 1, (x + 1) / gridN * 2 - 1
+      z1, z2 = z / gridN * 2 - 1, (z + 1) / gridN * 2 - 1
+      a, b, c, d = (x1, -1, z1, x1, z1), (x1, -1, z2, x1, z2), (x2, -1, z1, x2, z1), (x2, -1, z2, x2, z2)
+      facesAppend((a, c, b))
+      facesAppend((b, c, d))
+      a, b, c, d = (x1, 1, z1, x1, z1), (x1, 1, z2, x1, z2), (x2, 1, z1, x2, z1), (x2, 1, z2, x2, z2)
+      facesAppend((a, b, c))
+      facesAppend((b, d, c))
+      a, b, c, d = (-1, x1, z1, x1, z1), (-1, x1, z2, x1, z2), (-1, x2, z1, x2, z1), (-1, x2, z2, x2, z2)
+      facesAppend((a, b, c))
+      facesAppend((b, d, c))
+      a, b, c, d = (1, x1, z1, x1, z1), (1, x1, z2, x1, z2), (1, x2, z1, x2, z1), (1, x2, z2, x2, z2)
+      facesAppend((a, c, b))
+      facesAppend((b, c, d))
+      a, b, c, d = (x1, z1, -1, x1, z1), (x1, z2, -1, x1, z2), (x2, z1, -1, x2, z1), (x2, z2, -1, x2, z2)
+      facesAppend((a, b, c))
+      facesAppend((b, d, c))
+      a, b, c, d = (x1, z1, 1, x1, z1), (x1, z2, 1, x1, z2), (x2, z1, 1, x2, z1), (x2, z2, 1, x2, z2)
+      facesAppend((a, c, b))
+      facesAppend((b, c, d))
+  VBOdata, IBOdata = buildModel(faces)
+  VBOdata2 = []
+  VBOextend = VBOdata2.extend
+  for n in range(len(VBOdata)):
+    x, y, z, U, V = VBOdata[n]
+    L = (x * x + y * y + z * z) ** 0.5
+    # r, g, b = (sin(n * 3) + 2) / 3, (sin(n * 4) + 2) / 3, (sin(n * 5) + 2) / 3
+    VBOextend((x / L, y / L, z / L, 0, 0, 0, 0, (U + 1) / 2, (V + 1) / 2))
+  sphere = Model(VBOdata2, IBOdata)
+  return triangles, cube, sphere
 
 
 
@@ -204,13 +239,15 @@ class myRenderer:
 
   def onSurfaceCreated(self, gl10, config):
     print("📽️ onSurfaceCreated", gl10, config)
+    self.time, self.td = time(), 0
+
     # glClearColor(0.9, 0.95, 1, 0)
     self.program = program, attribs, uniforms = mainProgram()
     Model.calcAttribs(attribs)
 
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-    glActiveTexture(GL_TEXTURE0)
+    # glActiveTexture(GL_TEXTURE0) и так по умолчанию
 
     self.viewM = FLOAT.new_array(16)
     self.projectionM = FLOAT.new_array(16)
@@ -227,16 +264,37 @@ class myRenderer:
     self.skybox = skyBoxLoader(self.program2)
     self.textureChain = TextureChain()
 
-    self.rbxModels = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", self.textureChain)
+    union, PBR_models = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", self.textureChain)
 
-    triangles, cube = figures()
+    rYaw = rPitch = rRow = 0
+    def updRotators():
+      nonlocal rYaw, rPitch, rRow
+      rYaw = (rYaw + 45 * self.td) % 360
+      rotate = rYaw, rPitch, rRow
+      for rotator in rotators: rotator.update2(rotate)
+    self.updRotators = updRotators
+    rotators = []
+    union = RotateModel(union, (45, 0, 0))
+    rotators.append(union)
+    union = TranslateModel(union, (5, 0, 0))
+    PBR_models2 = []
+    for model in PBR_models:
+      model = RotateModel(model, (45, 0, 0))
+      rotators.append(model)
+      PBR_models2.append(TranslateModel(model, (5, 0, 0)))
+    self.rbxModel, self.rbxPBRModels = union, PBR_models2
+
+    triangles, cube, sphere = figures()
     fboTex = lambda: self.FBO[1]
     self.models = (
       NoCullFaceModel(triangles),
       TexturedModel(ScaleModel(cube, (0.5, 1, 0.5)), fboTex),
       TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (-2, 0, 0)), dbgTextures[0]),
       TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (-4.5, 0, 0)), dbgTextures[1]),
+      TexturedModel(TranslateModel(sphere, (0, 3, 0)), fboTex),
     )
+
+    self.pbr = PBR()
 
   def onSurfaceChanged(self, gl10, width, height):
     print("📽️ onSurfaceChanged", gl10, width, height)
@@ -259,15 +317,16 @@ class myRenderer:
     self.updMVP = False
 
     location = self.program[2]["uMVPMatrix"]
+    location2 = self.pbr.uModelM, self.pbr.uInvModelM
+    pbr_mat = FLOAT.new_array(16)
+    setIdentityM(pbr_mat, 0)
+
     for model in self.models: model.recalc(location, MVPmatrix)
-    for model in self.rbxModels: model.recalc(location, MVPmatrix)
+    self.rbxModel.recalc(location, MVPmatrix)
+    for model in self.rbxPBRModels: model.recalc(location2, pbr_mat)
 
   def calcViewMatrix(self):
-    yaw = self.yaw * PI180
-    pitch = self.pitch * PI180
-    roll = self.roll * PI180
-
-    q = Quaternion.fromYPR(yaw, pitch, roll)
+    q = Quaternion.fromYPR(self.yaw, self.pitch, self.roll)
     q2 = q.conjugated()
     self.viewNotTranslatedM = mat = q2.toMatrix()
 
@@ -301,7 +360,9 @@ class myRenderer:
     #checkGLError()
 
     for model in self.models: model.draw()
-    for model in self.rbxModels: model.draw()
+    self.rbxModel.draw()
+    camPos = self.camX, self.camY, self.camZ
+    self.pbr.draw(self.rbxPBRModels, camPos, self.MVPmatrix)
 
     self.skybox.draw(self.VPmatrix)
 
@@ -317,11 +378,14 @@ class myRenderer:
     self.eventHandler()
     if self.updMVP: self.calcMVPmatrix()
 
+    self.updRotators()
+
     glBindFramebuffer(GL_FRAMEBUFFER, self.FBO[0])
     self.drawScene()
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
-    self.drawScene()
+    self.textureChain.use2(self.FBO[1])
+    #self.drawScene()
     #self.fps()
 
   def move(self, dx, dy):

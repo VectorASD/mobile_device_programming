@@ -560,10 +560,10 @@ def loadRBXM(resource, name, textureChain):
     root = rbxmReader(resource)
     cache[name] = root
   # printTree(root)
-  models = modelLoader(root, name, textureChain)
-  print("models:", len(models))
+  union, PBR_models = modelLoader(root, name, textureChain)
+  print("PBR_models:", len(PBR_models))
   print("🐾🐾🐾", time() - T)
-  return models
+  return union, PBR_models
 
 """
 Проверка самодельного BytesIO и pack/unpack функций внутри.

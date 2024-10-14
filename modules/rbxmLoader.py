@@ -54,21 +54,26 @@ def modelHandler(root):
       if SA:
         SA_props = SA["_props"]
         print("👣", SA_props)
-        r, g, b = checkColor3(SA_props["Color"])
+        color = checkColor3(SA_props["Color"])
         colorMap = cdnLoader(checkString(SA_props["ColorMap"]))
         metalnessMap = cdnLoader(checkString(SA_props["MetalnessMap"]))
         normalMap = cdnLoader(checkString(SA_props["NormalMap"]))
         roughnessMap = cdnLoader(checkString(SA_props["RoughnessMap"]))
-        tex = (0.9, 0.95, 1, 1), ((normalMap if normalMap else colorMap, (r, g, b, 1)), )
+        PBR_textures = color, colorMap, (metalnessMap, normalMap, roughnessMap)
+        if mesh:
+          model = meshReader(mesh, True)
+          if model:
+            VBOdata, IBOdata = model
+            PBR_models.append((VBOdata, IBOdata, pos, PBR_textures, accessory))
       else:
         # r, g, b = checkColor3uint8(props["Color3uint8"])
         r = g = b = 255
         tex = (0, 0, 0, 1), ((cdnLoader(checkString(props["TextureID"])), (r/255, g/255, b/255, 1)),)
-      if mesh:
-        model = meshReader(mesh)
-        if model:
-          VBOdata, IBOdata = model
-          models.append((VBOdata, IBOdata, tex, pos, accessory))
+        if mesh:
+          model = meshReader(mesh, False)
+          if model:
+            VBOdata, IBOdata = model
+            models.append((VBOdata, IBOdata, pos, tex, accessory))
     elif className == "BodyColors":
       bodyColors = {
         "head": checkColor3(props["HeadColor3"]),
@@ -91,11 +96,12 @@ def modelHandler(root):
       pantss.append((color, asset))
     for child in childs: recurs(child, root_pos)
   models = []
+  PBR_models = []
   shirts = []
   pantss = []
   recurs(root, None)
 
-  return models, shirts, pantss
+  return models, PBR_models, shirts, pantss
 
 
 
@@ -105,9 +111,9 @@ def modelLoader(root, name, textureChain):
   global dbgTextures
 
   cache = STORAGE("rbxm_modelHandler_cache")
-  try: models, shirts, pantss = cache[name]
+  try: models, PBR_models, shirts, pantss = cache[name]
   except KeyError:
-    models, shirts, pantss = record = modelHandler(root)
+    models, PBR_models, shirts, pantss = record = modelHandler(root)
     cache[name] = record
 
   # pants = newTexture2(pantss[0][1])
@@ -115,10 +121,11 @@ def modelLoader(root, name, textureChain):
   bodyTexture = textureChain.use((1, 1), (0.9, 0.95, 1, 1), ())
 
   models2 = []
-  for VBOdata, IBOdata, tex, pos, accessory in models:
+  for VBOdata, IBOdata, pos, tex, accessory in models:
     model = Model(VBOdata, IBOdata)
     model = MatrixModel(model, pos)
-    model = TranslateModel(model, (3, 0, 0))
+    #model = RotateModel(model, (45, 0, 0))
+    #model = TranslateModel(model, (5, 0, 0))
     if not accessory: texture = bodyTexture
     elif tex:
       color, texArr = tex
@@ -131,4 +138,26 @@ def modelLoader(root, name, textureChain):
     else: texture = None
     if texture: model = TexturedModel(model, texture)
     models2.append(model)
-  return models2
+
+  PBR_models2 = []
+  for VBOdata, IBOdata, pos, PBR_textures, accessory in PBR_models:
+    (r, g, b), colorMap, otherTex = PBR_textures
+    if colorMap is None:
+      colorMap = textureChain.use((1, 1), (r, g, b, 1), ())
+    else:
+      colorMap = newTexture2(colorMap)
+      size = texture2size[colorMap]
+      colorMap = textureChain.use(size, (0, 0, 0, 1), ((colorMap, (r, g, b, 1)),))
+    metalnessMap, normalMap, roughnessMap = (None if tex is None else newTexture2(tex) for tex in otherTex)
+
+    model = Model(VBOdata, IBOdata)
+    model = PBR_Model(model, colorMap, metalnessMap, normalMap, roughnessMap)
+    model = MatrixModel(model, pos)
+    #model = RotateModel(model, (45, 0, 0))
+    #model = TranslateModel(model, (5, 0, 0))
+    PBR_models2.append(model)
+
+  union = UnionModel(models2)
+  PBR_model = UnionModel(PBR_models2)
+
+  return union, (PBR_model,)

@@ -194,6 +194,13 @@ GL_CLAMP_TO_EDGE = GLES20._f_GL_CLAMP_TO_EDGE
 
 glActiveTexture = GLES20._mw_glActiveTexture(20) # texture
 GL_TEXTURE0 = GLES20._f_GL_TEXTURE0
+GL_TEXTURE1 = GLES20._f_GL_TEXTURE1
+GL_TEXTURE2 = GLES20._f_GL_TEXTURE2
+GL_TEXTURE3 = GLES20._f_GL_TEXTURE3
+GL_TEXTURE4 = GLES20._f_GL_TEXTURE4
+GL_TEXTURE5 = GLES20._f_GL_TEXTURE5
+GL_TEXTURE6 = GLES20._f_GL_TEXTURE6
+GL_TEXTURE7 = GLES20._f_GL_TEXTURE7
 
 glFramebufferTexture2D = GLES20._mw_glFramebufferTexture2D(int, int, int, int, int) # target, attachment, textarget, texture, level
 glFramebufferRenderbuffer = GLES20._mw_glFramebufferRenderbuffer(int, int, int, int) # target, attachment, renderbuffertarget, renderbuffer
@@ -279,7 +286,7 @@ def newProgram(vCode, fCode, attribs, uniforms):
     loc = glGetAttribLocation(program, name)
     error = glGetError()
     if error != GL_NO_ERROR:
-      return "get attribute %r error: %s" % (name, error)
+      return "get attribute %r error: %s (%s)" % (name, error, GL_errors.get(error, "?"))
     if loc < 0:
       return "attribute %r not found: %s" % (name, loc)
     attribLocs[name] = loc
@@ -289,7 +296,7 @@ def newProgram(vCode, fCode, attribs, uniforms):
     loc = glGetUniformLocation(program, name)
     error = glGetError()
     if error != GL_NO_ERROR:
-      return "get uniform %r error: %s" % (name, error)
+      return "get uniform %r error: %s (%s)" % (name, error, GL_errors.get(error, "?"))
     if loc < 0:
       return "uniform %r not found: %s" % (name, loc)
     uniformLocs[name] = loc
@@ -299,7 +306,8 @@ def newProgram(vCode, fCode, attribs, uniforms):
 def checkProgram(program):
   if type(program) is str:
     print2("💥 shader program error:")
-    print(program)
+    print2(program)
+    exit()
   print2("✅ OK shader program:", program)
   return program
 
@@ -383,13 +391,13 @@ for k, v in GLES20_fields.items():
 
 def checkGLError():
   err = glGetError()
-  if err != GL_NO_ERROR: print2("🔥 glError:", err, "(%s)" % GL_errors[err])
+  if err != GL_NO_ERROR: print2("🔥 glError:", err, "(%s)" % GL_errors.get(err, "?"))
   else: print2("gl ok")
 
 def checkFrameBuffer():
   status = glCheckFramebufferStatus(GL_FRAMEBUFFER)
   if status != GL_FRAMEBUFFER_COMPLETE:
-    print2("💥 FBO error:", status, "(%s)" % GL_errors[status])
+    print2("💥 FBO error:", status, "(%s)" % GL_errors.get(status, "?"))
   else: print2("✅ FBO ok")
 
 def newFrameBuffer(width, height, depthTest = True, oldFBO = None, filter = GL_NEAREST):
