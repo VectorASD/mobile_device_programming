@@ -18,6 +18,8 @@ paths = (
   ("modules/rbxmLoader.py", None),
   ("resources/textures.png", None),
   ("resources/avatar.rbxm", None),
+  ("resources/skybox_labeled.png", None),
+  ("resources/skybox_space.webp", None),
 
   ("EulerRotators.py", None),
 )

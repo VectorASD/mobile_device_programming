@@ -492,31 +492,35 @@ void main() {
     glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
     glDepthFunc(GL_LESS)
 
-  def restart(self):
-    print("SKYBOX RESTART!")
+  def restart():
     SkyBox.model = None
     SkyBox.program = None
 
 
 
-def skyBoxLoader(gridProgram, dbg = False):
+def skyBoxLoader(gridProgram, indexes, flipY = False, dbg = False):
   oldViewportParams = INT.new_array(4)
   glGetIntegerv(GL_VIEWPORT, oldViewportParams, 0)
 
-  fbo = newFrameBuffer(32, 32, False)
+  W, H = gridProgram.tileSize
+  # print("SKYBOX TILE SIZE:", W, H) всё верно высчитывает внутри gridProgram
+  fbo = newFrameBuffer(W, H, False)
   glBindFramebuffer(GL_FRAMEBUFFER, fbo[0])
-  glViewport(0, 0, 32, 32)
+  glViewport(0, 0, W, H)
   #glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
   #glClear(GL_DEPTH_BUFFER_BIT) а смысл, если в FBO нет рендер-буфера глубины
 
   def textureCutter(n):
-    id = (4, 50, 384, 65, 78, 401)[n]
-    model = gridProgram.createModel(id, 0, 0, 1)
+    id = indexes[n]
+    # Текстуры Skybox-сторон капризничают -> им нужны сразу обе инверсии текстурных координат
+    # Но это неактуально для +Y и -Y
+    invert = flipY or n not in (2, 3) # +Y, -Y
+    model = gridProgram.createModel(id, 0, 0, 1, 0, invert, invert)
     gridProgram.draw(1, 0, (model,))
     model.delete()
-    buffer = MyBuffer.allocateDirect(32 * 32 * 4)
+    buffer = MyBuffer.allocateDirect(W * H * 4)
     buffer._m_order(MyBuffer.nativeOrder)
-    glReadPixels(0, 0, 32, 32, GL_RGBA, GL_UNSIGNED_BYTE, buffer)
+    glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, buffer)
     if dbg:
       buffer = buffer._m_asIntBuffer()
       #assert buffer._m_remaining() == 1024
@@ -525,7 +529,7 @@ def skyBoxLoader(gridProgram, dbg = False):
       print("👍", n, arr[:])
     return buffer
 
-  skybox = SkyBox(32, 32, textureCutter)
+  skybox = SkyBox(W, H, textureCutter)
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0)
   deleteFrameBuffer(fbo)

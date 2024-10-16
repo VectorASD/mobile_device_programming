@@ -46,55 +46,74 @@ void main() {
 
 
 class d2textureProgram():
-  def __init__(self, texture):
+  def __init__(self, texture, size):
     self.program = program = checkProgram(newProgram("""
 attribute vec2 vPosition;
 attribute vec2 vUV;
 attribute float vType;
 
 uniform float uAspect;
+uniform int uEvent;
 
 varying vec2 vaUV;
-varying float vaType;
+varying float vaActive;
+
+bool getBit(int num, int b) {
+  int bit = 0;
+  int min = 128;
+  for (int i = 7; i >= b; i--) {
+    if (num >= min) {
+      num -= min;
+      if (i == b) return true;
+    }
+    min /= 2;
+  }
+  return false;
+}
 
 void main() {
   gl_Position = vec4(vPosition.x, vPosition.y * uAspect - (1. - uAspect), 0, 1);
   vaUV = vUV;
-  vaType = vType;
+
+  int T = int(vType);
+  if (T < 1 || T > 3) vaActive = 1.;
+  else vaActive = getBit(uEvent, T - 1) ? 0.5 : 1.;
 }
-    """, """
+""", """
 precision mediump float;
 
 varying vec2 vaUV;
-varying float vaType;
+varying float vaActive;
 
 uniform sampler2D uTexture;
-uniform int uEvent;
 
 void main() {
-	 int b2 = uEvent / 2;
-	 int b1 = uEvent - b2 * 2;
-	 float X = 1.;
-  if (vaType == 1. && b1 > 0 || vaType == 2. && b2 > 0) X = 0.5;
+	 float X = vaActive;
   vec4 clr = texture2D(uTexture, vaUV);
   gl_FragColor = vec4(clr.rgb * X, clr.a);
 }
-    """, ('vPosition', 'vUV', 'vType'), ('uTexture', 'uAspect', 'uEvent')))
+""", ('vPosition', 'vUV', 'vType'), ('uTexture', 'uAspect', 'uEvent')))
     uniforms = program[2]
     self.uTexture = uniforms["uTexture"]
     self.uAspect = uniforms["uAspect"]
     self.uEvent = uniforms["uEvent"]
     self.models = []
-    self.add(160, 0.25, 5.5, 8, 1)
-    self.add(142, 0.25, 6.75, 8, 2)
+    self.modelPositions = []
+    self.aspect = 1
     self.texture = texture
+    self.size        = W, H = size
+    self.textureSize = tW, tH = texture2size[texture]
+    self.tileSize    = (tW + W - 1) // W, (tH + H - 1) // H
 
-  def createModel(self, id, posX, posY, L = 10, t = 0):
+  def createModel(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
+    W, H = self.size
     L /= 2
     L1 = L - 1
     pLx, pRx, pLy, pRy = (posX - L) / L, (posX - L1) / L, (posY - L) / -L, (posY - L1) / -L
-    y, x = divmod(id, 8)
-    Lx, Rx, Ly, Ry = x / 8, (x + 1) / 8, y / 64, (y + 1) / 64
+    y, x = divmod(id, W)
+    Lx, Rx, Ly, Ry = x / W, (x + 1) / W, y / H, (y + 1) / H
+    if invertX: Lx, Rx = Rx, Lx
+    if invertY: Ly, Ry = Ry, Ly
     return Model((
       pLx, pLy, Lx, Ly, t,
       pRx, pLy, Rx, Ly, t,
@@ -103,11 +122,13 @@ void main() {
     ), (
       0, 1, 2, 0, 2, 3,
     ))
-  def add(self, id, posX, posY, L = 10, t = 0):
-    model = self.createModel(id, posX, posY, L, t)
+  def add(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
+    model = self.createModel(id, posX, posY, L, t, invertX, invertY)
     self.models.append(model)
+    self.modelPositions.append((posX / L, (posX + 1) / L, posY / L, (posY + 1) / L, t))
 
   def draw(self, aspect, eventN, customModels = None):
+    self.aspect = aspect
     def func():
       glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 5 * 4, 0)
       glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 5 * 4, 2 * 4)
@@ -125,6 +146,23 @@ void main() {
 
     models = customModels if customModels is not None else self.models
     for model in models: model.draw(func)
+  
+  def checkPosition(self, x, y, up):
+    # x и y от 0 до 1
+    aspect = self.aspect
+    """
+    1x2 aspect=0.5
+    y = 0.5 -> 0
+    y = 1 -> 1
+    1x3 aspect=0.33
+    y = 0.66 -> 0
+    y = 1 -> 1
+    """
+    y = (y - (1 - aspect)) / aspect
+    result = -1
+    for x1, x2, y1, y2, t in self.modelPositions:
+      if x1 - up <= x and x <= x2 + up and y1 - up <= y and y <= y2 + up: result = t
+    return result
 
 
 
@@ -220,6 +258,12 @@ class myRenderer:
 
     self.W = self.H = self.WH_ratio = -1
     self.FBO = None
+    self.ready = False
+
+    textures = rm.get("drawable/textures")
+    skybox_labeled = rm.get("drawable/skybox_labeled")
+    skybox_space = rm.get("drawable/skybox_space")
+    self.texture_base = textures, skybox_labeled, skybox_space
 
   def fps(self):
     T = time()
@@ -238,6 +282,7 @@ class myRenderer:
     return self.fpsS
 
   def onSurfaceCreated(self, gl10, config):
+    self.ready = False
     print("📽️ onSurfaceCreated", gl10, config)
     self.time, self.td = time(), 0
 
@@ -256,12 +301,27 @@ class myRenderer:
 
     self.calcViewMatrix()
 
-    textures = rm.get("drawable/textures")
+    textures, skybox_labeled, skybox_space = self.texture_base
     self.mainTexture = mainTextures = newTexture(ctxResources, textures)
-    print("textures:", hex(textures), mainTextures)
+    skyboxLabeled = newTexture(ctxResources, skybox_labeled)
+    skyboxSpace   = newTexture(ctxResources, skybox_space)
+    print("textures:",       hex(textures),       mainTextures)
+    print("skybox_labeled:", hex(skybox_labeled), skyboxLabeled)
+    print("skybox_space:",   hex(skybox_space),   skyboxSpace)
 
-    self.program2 = d2textureProgram(mainTextures)
-    self.skybox = skyBoxLoader(self.program2)
+    self.program2 = gridProgram = d2textureProgram(mainTextures, (8, 64))
+    gridProgram.add(160, 0.25, 5.5,  8, 1)
+    gridProgram.add(142, 0.25, 6.75, 8, 2)
+    gridProgram.add(45,  6.75, 6.75, 8, 3)
+    self.skyboxes = (
+      skyBoxLoader(gridProgram, (4, 50, 384, 65, 78, 401)),
+      skyBoxLoader(d2textureProgram(skyboxLabeled, (1, 6)), (0, 1, 2, 3, 4, 5)),
+      skyBoxLoader(d2textureProgram(skyboxSpace, (4, 3)), (6, 4, 3, 11, 7, 5), True),
+      None,
+    )
+    self.skyboxN       = 2
+    self.currentSkybox = self.skyboxes[self.skyboxN]
+
     self.textureChain = TextureChain()
 
     union, PBR_models, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", self.textureChain)
@@ -298,6 +358,7 @@ class myRenderer:
 
     if self.FBO is not None: deleteFrameBuffer(self.FBO)
     self.FBO = newFrameBuffer(width, height)
+    self.ready = True
 
   def calcMVPmatrix(self):
     MVPmatrix = self.MVPmatrix
@@ -358,7 +419,8 @@ class myRenderer:
     enableProgram(program)
     self.character.draw(self.pbr, camPos, self.MVPmatrix)
 
-    self.skybox.draw(self.VPmatrix)
+    skybox = self.currentSkybox
+    if skybox is not None: skybox.draw(self.VPmatrix)
 
     self.program2.draw(self.WH_ratio, self.eventN)
 
@@ -386,18 +448,32 @@ class myRenderer:
     #self.fps()
 
   def move(self, dx, dy):
+    if not self.ready: return
     self.yaw -= dx * 0.5
     self.pitch = max(-90, min(self.pitch - dy * 0.5, 90))
     self.calcViewMatrix()
 
-  def event(self, up, down):
-    self.eventN = up | down * 2
+  def event(self, up, down, misc):
+    self.eventN = up | down << 1 | misc << 2
+
+  def getTByPosition(self, x, y, up):
+    if not self.ready: return -1
+    return self.program2.checkPosition(x / self.W, y / self.H, up)
+
+  def click(self, x, y, click_td):
+    if not self.ready: return
+    if click_td > 0.5: return
+    t = self.getTByPosition(x, y, 0.01)
+    if t == 3:
+      self.skyboxN = N = (self.skyboxN + 1) % len(self.skyboxes)
+      self.currentSkybox = self.skyboxes[N]
+    # print("🐾 click:", x, y, t)
 
   def restart(self):
     print2("~" * 53)
     self.W = self.H = self.WH_ratio = -1
     self.FBO = None
-    self.skybox.restart()
+    SkyBox.restart()
 
   reverse = {
     "cr": onSurfaceCreated,
@@ -446,8 +522,10 @@ class activityHandler:
     self.viewPause = view._mw_onPause()
     self.renderer = renderer
     self.prevXY = {}
+    self.startXYT = {}
     self.eventA = set()
     self.eventB = set()
+    self.eventC = set()
 
     return True # lock setContentView
 
@@ -468,21 +546,33 @@ class activityHandler:
     getX = e._mw_getX(int)
     getY = e._mw_getY(int)
     getPointerId = e._mw_getPointerId(int)
-    prevXY, renderer = self.prevXY, self.renderer
+    prevXY, startXYT, renderer = self.prevXY, self.startXYT, self.renderer
     actionN = action >> 8
     action &= 255
     W32 = renderer.W / 32
     W5_5, W6 = W32 * 5.5, W32 * 6
     H8 = renderer.H - W5_5
     H8b = H8 - W5_5
+    T = time()
     if action in ACTION_DOWN:
       x, y, id = getX(actionN), getY(actionN), getPointerId(actionN)
+      t = renderer.getTByPosition(x, y, 0.01)
+      """
       if x < W6 and y > H8b:
         prevXY[id] = None
         if y > H8: self.eventB.add(id)
         else: self.eventA.add(id)
         renderer.event(bool(self.eventA), bool(self.eventB))
       else: prevXY[id] = x, y
+      """
+      if t > 0:
+        prevXY[id] = None
+        if t == 1: self.eventA.add(id)
+        elif t == 2: self.eventB.add(id)
+        elif t == 3: self.eventC.add(id)
+        renderer.event(bool(self.eventA), bool(self.eventB), bool(self. eventC))
+      else: prevXY[id] = x, y
+      startXYT[id] = [x, y, T, True]
     elif action == ACTION_MOVE:
       for p in range(e._m_getPointerCount()):
         x, y, id = getX(p), getY(p), getPointerId(p)
@@ -491,16 +581,25 @@ class activityHandler:
         prevX, prevY = prevv
         prevXY[id] = x, y
         self.renderer.move(x - prevX, y - prevY)
+
+        xx, yy, t, ok = startXYT[id]
+        if ok and (xx - x) ** 2 + (yy - y) ** 2 > 100: startXYT[id][3] = False
     elif action in ACTION_UP:
-      id = getPointerId(actionN)
-      prevXY[id] = 0, 0
+      x, y, id = getX(actionN), getY(actionN), getPointerId(actionN)
+      prevXY[id] = 0, 0 # del prevXY[id] пока нет :/
       self.eventA.remove(id)
       self.eventB.remove(id)
-      renderer.event(bool(self.eventA), bool(self.eventB))
-      # del prevXY[id] :/
+      self.eventC.remove(id)
+      renderer.event(bool(self.eventA), bool(self.eventB), bool(self.eventC))
+
+      xx, yy, t, ok = startXYT[id]
+      if ok and (xx - x) ** 2 + (yy - y) ** 2 < 100:
+        renderer.click(xx, yy, T - t)
     elif action == ACTION_CANCEL:
       self.eventA.clear()
       self.eventB.clear()
+      self.eventC.clear()
+      renderer.event(False, False, False)
     return True
   def onKeyDown(self, num, e):
     print("onKeyDown", num, e)
@@ -529,6 +628,8 @@ def Activity():
   rm = ResourceManager()
   rm.xml("main", "main.xml", main_xml)
   rm.drawable("textures", "textures.png", __resource("textures.png"))
+  rm.drawable("skybox_labeled", "skybox_labeled.png", __resource("skybox_labeled.png"))
+  rm.drawable("skybox_space", "skybox_space.webp", __resource("skybox_space.webp"))
   #print("•", rm)
   ress = rm.release()
   ctx = ress.ctx

@@ -100,8 +100,8 @@ def makeChainTree(node, used, level = ""):
   id = node["_id"]
   if id in used: return
   used.add(id)
-  print("%s%s %s" % (level, node["_name"], id))
-  level += "| "
+  # print("%s%s %s" % (level, node["_name"], id))
+  # level += "| "
   return tuple((CFrame2mat(C0), mat_invertor(CFrame2mat(C1)), ref_node["_id"], makeChainTree(ref_node, used, level)) for ref_node, C0, C1 in node["_refs1"])
 
 def modelHandler(root):
@@ -122,10 +122,10 @@ def modelHandler(root):
     if className == "Model":
       humanoid = getHumanoid(node)
       if humanoid is not None:
-        print("👤", humanoid["_props"])
+        # print("👤", humanoid["_props"])
         primary = node["_refs"]["PrimaryPart"]
         motorTree = makeChainTree(primary, used_in_tree)
-        print("🌴", motorTree)
+        # print("🌴", motorTree)
         # huPosit = recalcChainPos((0, 0, 0), motorTree)
     elif className == "MeshPart":
       # print("%s %s %s\n" % (id, name, props))
