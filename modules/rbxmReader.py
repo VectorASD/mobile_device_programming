@@ -202,38 +202,6 @@ def Vector3(content, count): # 0x0e
   Z = Float32(content, count)
   return zip(X, Y, Z)
 
-def getRotators():
-  def rotX(s, c): return 1, 0, 0, 0, c, -s, 0, s, c
-  def rotY(s, c): return c, 0, s, 0, 1, 0, -s, 0, c
-  def rotZ(s, c): return c, -s, 0, s, c, 0, 0, 0, 1
-  def mul(a, b):
-    a00, a01, a02, a10, a11, a12, a20, a21, a22 = a
-    b00, b01, b02, b10, b11, b12, b20, b21, b22 = b
-    return (
-      a00 * b00 + a01 * b10 + a02 * b20, a00 * b01 + a01 * b11 + a02 * b21, a00 * b02 + a01 * b12 + a02 * b22,
-      a10 * b00 + a11 * b10 + a12 * b20, a10 * b01 + a11 * b11 + a12 * b21, a10 * b02 + a11 * b12 + a12 * b22,
-      a20 * b00 + a21 * b10 + a22 * b20, a20 * b01 + a21 * b11 + a22 * b21, a20 * b02 + a21 * b12 + a22 * b22)
-  pi180 = 0.017453292519943295
-  def fromEulerAngles(x, y, z): # проверено в Roblox Studio на print(CFrame.fromEulerAngles(math.rad(10), math.rad(20), math.rad(30)))
-    x, y, z = x * pi180, y * pi180, z * pi180
-    sx, cx, sy, cy, sz, cz = sin(x), cos(x), sin(y), cos(y), sin(z), cos(z)
-    return mul(mul(rotX(sx, cx), rotY(sy, cy)), rotZ(sz, cz))
-  def fromEulerAnglesYXZ(x, y, z): # проверено в Roblox Studio на print(CFrame.fromEulerAnglesYXZ(math.rad(10), math.rad(20), math.rad(30)))
-    x, y, z = x * pi180, y * pi180, z * pi180
-    sx, cx, sy, cy, sz, cz = sin(x), cos(x), sin(y), cos(y), sin(z), cos(z)
-    return mul(mul(rotY(sy, cy), rotX(sx, cx)), rotZ(sz, cz))
-  rotators = (
-    None, None, (0, 0, 0), (90, 0, 0), None, (0, 180, 180), (-90, 0, 0), (0, 180, 90), None, (0, 90, 90),
-    (0, 0, 90), None, (0, -90, 90), (-90, -90, 0), (0, -90, 0), None, (90, -90, 0), (0, 90, 180),
-    None, None, (0, 180, 0), (-90, -180, 0), None, (0, 0, 180), (90, 180, 0), (0, 0, -90), None, (0, -90, -90),
-    (0, -180, -90), None, (0, 90, -90), (90, 90, 0), (0, 90, 0), None, (-90, 90, 0), (0, -90, 180))
-  #for i, j in enumerate(rotators):
-  #  if j: print(hex(i), j) всё сошлось
-  return tuple((fromEulerAnglesYXZ(rotator[0], rotator[1], rotator[2]) if rotator else None) for rotator in rotators)
-  # также, properties explorer в Roblox Studio преобразует поворот именно по fromEulerAnglesYXZ, а не fromEulerAngles!
-CFrameRotators = getRotators()
-# print(CFrameRotators)
-
 def CFrame(content, count): # 0x10
   rotators = []
   for i in range(count):
@@ -515,7 +483,7 @@ def Chunk(file, CTX):
     except KeyError: classes[classID] = inst
 
     for referent in referents:
-      data = {"_id": referent, "_parent": None, "_childs": [], "_class": className, "_name": "🤔", "_props": {}}
+      data = {"_id": referent, "_parent": None, "_childs": [], "_class": className, "_name": "🤔", "_props": {}, "_refs0": [], "_refs1": [], "_refs": {}}
       try:
         conflict = instances[referent]
         exit("Конфликтный referent %r: %r <-> %r" % (referent, conflict, data))
@@ -532,7 +500,7 @@ def Chunk(file, CTX):
 def rbxmReader(resource):
   SStrings = []
   classes = {}
-  root = {"_id": -1, "_parent": "x", "_childs": [], "_class": "root", "_name": "root", "_props": {}}
+  root = {"_id": -1, "_parent": "x", "_childs": [], "_class": "root", "_name": "root", "_props": {}, "_refs0": [], "_refs1": [], "_refs": {}}
   instances = {-1: root}
   CTX = (SStrings, classes, root, instances)
 
@@ -540,14 +508,38 @@ def rbxmReader(resource):
   if file.read(8) != b'<roblox!': exit("Это не rbxm!")
   sign = file.read(6).hex()
   if sign != "89ff0d0a1a0a": exit("Неверная подпись: %s" % sign)
-  version, classes, instances, reserved = file.unpack("<Hii8s")
-  print("Класов:", classes)
-  print("Экземпляров:", instances)
+  version, classes, instancesL, reserved = file.unpack("<Hii8s")
+  print("Классов:", classes)
+  print("Экземпляров:", instancesL)
   if version != 0: exit("Странная версия заголовка: %s" % version)
   if reserved != b"\0" * 8: exit("Странный reserved заголовка: %s" % reserved.hex())
   while True:
     end = Chunk(file, CTX)
     if end: break
+
+  for instance in instances.values():
+    props = instance["_props"]
+    className = instance["_class"]
+    if className in ("Motor6D", "Weld"):
+      try:
+        if className == "Weld":
+          R, L = checkReferent(props["Part0"]), checkReferent(props["Part1"])
+          C1, C0 = checkCFrame(props["C0"]), checkCFrame(props["C1"])
+        else:
+          L, R = checkReferent(props["Part0"]), checkReferent(props["Part1"])
+          C0, C1 = checkCFrame(props["C0"]), checkCFrame(props["C1"])
+        part0, part1 = instances[L], instances[R]
+        part0["_refs1"].append((part1, C0, C1))
+        part1["_refs0"].append(part0)
+      except KeyError as e: print("☣️ '%s' warning: %s" % (className, e))
+    else:
+      for name, (type, value) in props.items():
+        if type == 0x13: # Referent
+          try:
+            inst = instances[value]
+            instance["_refs"][name] = inst
+          except KeyError as e: print("☣️ '%s' warning: %s" % (className, e))
+
   return root
 
 def loadRBXM(resource, name, textureChain):
@@ -560,10 +552,9 @@ def loadRBXM(resource, name, textureChain):
     root = rbxmReader(resource)
     cache[name] = root
   # printTree(root)
-  union, PBR_models = modelLoader(root, name, textureChain)
-  print("PBR_models:", len(PBR_models))
+  union, PBR_models, charModel = modelLoader(root, name, textureChain)
   print("🐾🐾🐾", time() - T)
-  return union, PBR_models
+  return union, PBR_models, charModel
 
 """
 Проверка самодельного BytesIO и pack/unpack функций внутри.

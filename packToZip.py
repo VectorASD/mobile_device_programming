@@ -18,6 +18,8 @@ paths = (
   ("modules/rbxmLoader.py", None),
   ("resources/textures.png", None),
   ("resources/avatar.rbxm", None),
+
+  ("EulerRotators.py", None),
 )
 
 zip_filename = "PMY_name.zip"

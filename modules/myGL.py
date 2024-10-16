@@ -76,7 +76,11 @@ GL_STATIC_DRAW = GLES20._f_GL_STATIC_DRAW
 
 sin = Math._mw_sin(DOUBLE)
 cos = Math._mw_cos(DOUBLE)
+asin = Math._mw_asin(DOUBLE)
+acos = Math._mw_acos(DOUBLE)
+atan2 = Math._mw_atan2(DOUBLE, DOUBLE)
 PI = Math._f_PI
+PI2 = PI / 2
 PI180 = PI / 180
 
 glClearColor = GLES20._mw_glClearColor(float, float, float, float)

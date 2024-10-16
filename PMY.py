@@ -264,25 +264,15 @@ class myRenderer:
     self.skybox = skyBoxLoader(self.program2)
     self.textureChain = TextureChain()
 
-    union, PBR_models = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", self.textureChain)
+    union, PBR_models, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", self.textureChain)
 
-    rYaw = rPitch = rRow = 0
-    def updRotators():
-      nonlocal rYaw, rPitch, rRow
-      rYaw = (rYaw + 45 * self.td) % 360
-      rotate = rYaw, rPitch, rRow
-      for rotator in rotators: rotator.update2(rotate)
-    self.updRotators = updRotators
-    rotators = []
     union = RotateModel(union, (45, 0, 0))
-    rotators.append(union)
     union = TranslateModel(union, (5, 0, 0))
     PBR_models2 = []
     for model in PBR_models:
       model = RotateModel(model, (45, 0, 0))
-      rotators.append(model)
       PBR_models2.append(TranslateModel(model, (5, 0, 0)))
-    self.rbxModel, self.rbxPBRModels = union, PBR_models2
+    self.rbxModel, self.rbxPBRModels, self.character = union, PBR_models2, character
 
     triangles, cube, sphere = figures()
     fboTex = lambda: self.FBO[1]
@@ -324,6 +314,7 @@ class myRenderer:
     for model in self.models: model.recalc(location, MVPmatrix)
     self.rbxModel.recalc(location, MVPmatrix)
     for model in self.rbxPBRModels: model.recalc(location2, pbr_mat)
+    self.character.recalc(location, location2, MVPmatrix)
 
   def calcViewMatrix(self):
     q = Quaternion.fromYPR(self.yaw, self.pitch, self.roll)
@@ -364,6 +355,9 @@ class myRenderer:
     camPos = self.camX, self.camY, self.camZ
     self.pbr.draw(self.rbxPBRModels, camPos, self.MVPmatrix)
 
+    enableProgram(program)
+    self.character.draw(self.pbr, camPos, self.MVPmatrix)
+
     self.skybox.draw(self.VPmatrix)
 
     self.program2.draw(self.WH_ratio, self.eventN)
@@ -378,14 +372,17 @@ class myRenderer:
     self.eventHandler()
     if self.updMVP: self.calcMVPmatrix()
 
-    self.updRotators()
+    character = self.character
+    yaw, pitch, roll = character.YPR
+    yaw = (yaw + 15 * self.td) % 360
+    character.setRotation(yaw, pitch, roll)
 
     glBindFramebuffer(GL_FRAMEBUFFER, self.FBO[0])
     self.drawScene()
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
-    self.textureChain.use2(self.FBO[1])
-    #self.drawScene()
+    #self.textureChain.use2(self.FBO[1])
+    self.drawScene()
     #self.fps()
 
   def move(self, dx, dy):

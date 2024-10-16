@@ -242,6 +242,108 @@ class NoCullFaceModel:
 
 
 
+dbgTextures = 0, 0
+
+class CharacterModel:
+  def __init__(self, character, textureChain):
+    global dbgTextures
+
+    self.motorTree, models, PBR_models = character
+
+    bodyTexture = textureChain.use((1, 1), (0.9, 0.95, 1, 1), ())
+    self.models = models2 = []
+    self.PBR_models = PBR_models2 = []
+
+    for node, VBOdata, IBOdata, tex, accessory in models:
+      if not accessory: texture = bodyTexture
+      else: # tex всегда есть
+        color, texArr = tex
+        texArr = ((newTexture2(tex), color) for tex, color in texArr)
+        if texArr: size = texture2size[texArr[0][0]]
+        else: size = 1, 1
+        print("🤗 SIZE:", size, color, texArr)
+        texture = textureChain.use(size, color, texArr)
+        if texArr: dbgTextures = texArr[0][0], texture
+  
+      model = Model(VBOdata, IBOdata)
+      if not accessory and node["_name"] != "Head": model = ScaleModel(model, (1, 1.25 * 1.05, 1)) # TODO
+      if texture: model = TexturedModel(model, texture)
+      models2.append((node["_id"], model))
+
+    for node, VBOdata, IBOdata, PBR_textures, accessory in PBR_models:
+      (r, g, b), colorMap, otherTex = PBR_textures
+      if colorMap is None:
+        colorMap = textureChain.use((1, 1), (r, g, b, 1), ())
+      else:
+        colorMap = newTexture2(colorMap)
+        size = texture2size[colorMap]
+        colorMap = textureChain.use(size, (0, 0, 0, 1), ((colorMap, (r, g, b, 1)),))
+      metalnessMap, normalMap, roughnessMap = (None if tex is None else newTexture2(tex) for tex in otherTex)
+  
+      model = Model(VBOdata, IBOdata)
+      model = PBR_Model(model, colorMap, metalnessMap, normalMap, roughnessMap)
+      PBR_models2.append((node["_id"], model))
+
+    self.recalcOptions = None
+    self.position = 5, 0, 0
+    self.setRotation(45, 0, 0)
+
+  def setPosition(self, x, y, z):
+    self.position = x, y, z
+    self.recalcChainPos()
+
+  def setRotation(self, yaw, pitch, roll):
+    self.YPR = yaw, pitch, roll
+    self.rotation = Quaternion.fromYPR(yaw, pitch, roll).conjugated().toMatrix()
+    self.recalcChainPos()
+
+  def recalcChainPos(self):
+    def recurs(node, mat):
+      for C0, C1, id, childs in node:
+        mat2 = FLOAT.new_array(16)
+        multiplyMM(mat2, 0, mat, 0, C0, 0)
+        multiplyMM(mat2, 0, mat2, 0, motor, 0)
+        multiplyMM(mat2, 0, mat2, 0, C1, 0)
+        result[id] = mat2
+        recurs(childs, mat2)
+    self.chainMats = result = {}
+    mat = self.rotation
+    mat[12:15] = self.position
+    motor = CFrame2mat((0, 0, 0) + fromEulerAngles(0, 0, 0))
+    recurs(self.motorTree, mat)
+    # for k, v in result.items(): print(k, v[12:])
+    self.recalc2()
+
+  def recalc(self, location, pbr_location, MVPmatrix):
+    self.recalcOptions = location, pbr_location, MVPmatrix
+    self.recalc2()
+
+  def recalc2(self):
+    options = self.recalcOptions
+    if options is None: return
+
+    location, pbr_location, MVPmatrix = options
+    mats = self.chainMats
+
+    for id, model in self.models:
+      mat = mats[id]
+      #print(id, mat[12:])
+      model_mat = FLOAT.new_array(16)
+      multiplyMM(model_mat, 0, MVPmatrix, 0, mat, 0)
+      model.recalc(location, model_mat)
+
+    self.PBR_models2 = arr = []
+    append = arr.append
+    for id, model in self.PBR_models:
+      model.recalc(pbr_location, mats[id])
+      append(model)
+
+  def draw(self, PBR, camPos, viewProjectM):
+    for id, model in self.models: model.draw()
+    PBR.draw(self.PBR_models2, camPos, viewProjectM)
+
+
+
 
 
 class Quaternion:
@@ -666,6 +768,8 @@ void main() {
     PBR_Model.PBR = self
 
   def draw(self, models, camPos, viewProjectM):
+    if not models: return
+
     enableProgram(self.program)
     glUniform1i(self.uAlbedoMap, 0)
     glUniform1i(self.uNormalMap, 1)
@@ -859,7 +963,7 @@ void main() {
     // the ray traveling from the point to irradiance source
     vec3 wi = reflect(-wo, wh);
 
-    vec3 baseReflectivty = mix(vec3(0.04), u_Albedo, u_Metallic);
+    vec3 baseReflectivty = mix(vec3(0.04), albedo, metallic);
 
     // reflectance equation
     vec3 Lo = vec3(0.);
@@ -873,12 +977,12 @@ void main() {
 
     // speculation: sample both the pre-filter map and the BRDF lut and combine them together as per the Split-Sum approximation to get the IBL specular part.
     // const float MAX_REFLECTION_LOD = 4.;
-    // vec3 prefilteredColor = textureLod(u_GlossyIrradianceMap, wi,  u_Roughness * MAX_REFLECTION_LOD).rgb;
+    // vec3 prefilteredColor = textureLod(u_GlossyIrradianceMap, wi,  roughness * MAX_REFLECTION_LOD).rgb;
     vec3 prefilteredColor = textureCube(u_GlossyIrradianceMap, wi).rgb;
-    vec2 brdf  = texture2D(u_BRDFLookupTexture, vec2(max(dot(wh, wo), 0.), u_Roughness)).rg;
+    vec2 brdf  = texture2D(u_BRDFLookupTexture, vec2(max(dot(wh, wo), 0.), roughness)).rg;
     vec3 specular = prefilteredColor * (baseReflectivty * brdf.x + brdf.y);
 
-    vec3 ambient  = (kD * diffuse + specular) * u_AmbientOcclusion;
+    vec3 ambient  = (kD * diffuse + specular) * ambientOcclusion;
 
     vec3 color = ambient + Lo;
 
