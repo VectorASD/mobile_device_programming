@@ -542,7 +542,7 @@ def rbxmReader(resource):
 
   return root
 
-def loadRBXM(resource, name, textureChain):
+def loadRBXM(resource, name, renderer):
   cache = STORAGE("rbxm_cache")
   T = time()
   print("🐾🐾🐾")
@@ -552,7 +552,7 @@ def loadRBXM(resource, name, textureChain):
     root = rbxmReader(resource)
     cache[name] = root
   # printTree(root)
-  union, PBR_models, charModel = modelLoader(root, name, textureChain)
+  union, PBR_models, charModel = modelLoader(root, name, renderer)
   print("🐾🐾🐾", time() - T)
   return union, PBR_models, charModel
 

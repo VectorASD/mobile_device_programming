@@ -13,8 +13,9 @@ import rbxmReader
 
 
 
-def mainProgram():
-  return checkProgram(newProgram("""
+class mainProgram:
+  def __init__(self, renderer):
+    self.program = _, attribs, uniforms = checkProgram(newProgram("""
 attribute vec3 vPosition;
 attribute vec4 vColor;
 attribute vec2 vUV;
@@ -42,12 +43,24 @@ void main() {
   else gl_FragColor = texture2D(uTexture, vaUV);
 }
 """, ('vPosition', 'vColor', 'vUV'), ('uMVPMatrix', 'uTexture')))
+    vPosition = attribs["vPosition"]
+    vColor    = attribs["vColor"]
+    vUV       = attribs["vUV"]
+    uMVPMatrix    = uniforms["uMVPMatrix"]
+    self.uTexture = uniforms["uTexture"]
+    def func():
+      glVertexAttribPointer(vPosition, 3, GL_FLOAT, False, 9 * 4, 0)
+      glVertexAttribPointer(vColor,    4, GL_FLOAT, False, 9 * 4, 3 * 4)
+      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 9 * 4, 7 * 4)
+    self.func = func
+    self.renderer = renderer
+    self.location = uMVPMatrix
 
 
 
 class d2textureProgram():
-  def __init__(self, texture, size):
-    self.program = program = checkProgram(newProgram("""
+  def __init__(self, texture, size, renderer):
+    self.program = _, attribs, uniforms = checkProgram(newProgram("""
 attribute vec2 vPosition;
 attribute vec2 vUV;
 attribute float vType;
@@ -93,7 +106,16 @@ void main() {
   gl_FragColor = vec4(clr.rgb * X, clr.a);
 }
 """, ('vPosition', 'vUV', 'vType'), ('uTexture', 'uAspect', 'uEvent')))
-    uniforms = program[2]
+    vPosition = attribs["vPosition"]
+    vUV       = attribs["vUV"]
+    vType     = attribs["vType"]
+    def func():
+      glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 5 * 4, 0)
+      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 5 * 4, 2 * 4)
+      glVertexAttribPointer(vType,     1, GL_FLOAT, False, 5 * 4, 4 * 4)
+    self.func = func
+    self.location = None
+
     self.uTexture = uniforms["uTexture"]
     self.uAspect = uniforms["uAspect"]
     self.uEvent = uniforms["uEvent"]
@@ -101,6 +123,7 @@ void main() {
     self.modelPositions = []
     self.aspect = 1
     self.texture = texture
+    self.renderer = renderer
     self.size        = W, H = size
     self.textureSize = tW, tH = texture2size[texture]
     self.tileSize    = (tW + W - 1) // W, (tH + H - 1) // H
@@ -121,7 +144,7 @@ void main() {
       pLx, pRy, Lx, Ry, t,
     ), (
       0, 1, 2, 0, 2, 3,
-    ))
+    ), self)
   def add(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
     model = self.createModel(id, posX, posY, L, t, invertX, invertY)
     self.models.append(model)
@@ -129,12 +152,6 @@ void main() {
 
   def draw(self, aspect, eventN, customModels = None):
     self.aspect = aspect
-    def func():
-      glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 5 * 4, 0)
-      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 5 * 4, 2 * 4)
-      glVertexAttribPointer(vType,     1, GL_FLOAT, False, 5 * 4, 4 * 4)
-    attribs = self.program[1]
-    vPosition, vUV, vType = attribs["vPosition"], attribs["vUV"], attribs["vType"]
 
     glDisable(GL_DEPTH_TEST)
     glDisable(GL_CULL_FACE)
@@ -145,19 +162,11 @@ void main() {
     glBindTexture(GL_TEXTURE_2D, self.texture)
 
     models = customModels if customModels is not None else self.models
-    for model in models: model.draw(func)
-  
+    for model in models: model.draw()
+
   def checkPosition(self, x, y, up):
     # x и y от 0 до 1
     aspect = self.aspect
-    """
-    1x2 aspect=0.5
-    y = 0.5 -> 0
-    y = 1 -> 1
-    1x3 aspect=0.33
-    y = 0.66 -> 0
-    y = 1 -> 1
-    """
     y = (y - (1 - aspect)) / aspect
     result = -1
     for x1, x2, y1, y2, t in self.modelPositions:
@@ -166,7 +175,15 @@ void main() {
 
 
 
-def figures():
+""" перепись населения (шейдерных программ):
+def mainProgram()      - стартовая балванка
+class d2textureProgram - резак сеточных атласов текстур
+class SkyBox           - без неба сейчас нынче никак
+class TextureChain     - комбинатор текстур
+class PBR              - физическая не физика
+"""
+
+def figures(shaderProgram):
   ratio = (2 ** 2 - 1) ** 0.5
   ratio2 = ratio * 0.6
 
@@ -180,7 +197,7 @@ def figures():
    -1.2,  ratio, 4, 0, 0, 0, 0, -1, -1,
   ), (
     0, 2, 1, 3, 4, 5, 0, 4, 6, # старые 3 треугольника
-  ))
+  ), shaderProgram)
 
   cube = Model((
     -1, -1, -1,   1, 1, 1, 1,   -1, -1, #  0
@@ -203,7 +220,7 @@ def figures():
      2,  7,  3,  2,  6,  7, # тыл
      3,  7,  0,  0,  7,  4, # левый бок
      4,  7,  5,  5,  7,  6, # верх куба
-  ))
+  ), shaderProgram)
 
   gridN = 8
   gridRange = range(gridN)
@@ -239,7 +256,7 @@ def figures():
     L = (x * x + y * y + z * z) ** 0.5
     # r, g, b = (sin(n * 3) + 2) / 3, (sin(n * 4) + 2) / 3, (sin(n * 5) + 2) / 3
     VBOextend((x / L, y / L, z / L, 0, 0, 0, 0, (U + 1) / 2, (V + 1) / 2))
-  sphere = Model(VBOdata2, IBOdata)
+  sphere = Model(VBOdata2, IBOdata, shaderProgram)
   return triangles, cube, sphere
 
 
@@ -286,20 +303,21 @@ class myRenderer:
     print("📽️ onSurfaceCreated", gl10, config)
     self.time, self.td = time(), 0
 
-    # glClearColor(0.9, 0.95, 1, 0)
-    self.program = program, attribs, uniforms = mainProgram()
-    Model.calcAttribs(attribs)
+    # основные настройки по умолчанию
 
+    # glClearColor(0.9, 0.95, 1, 0)
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
     # glActiveTexture(GL_TEXTURE0) и так по умолчанию
+
+    # матрицы
 
     self.viewM = FLOAT.new_array(16)
     self.projectionM = FLOAT.new_array(16)
     self.MVPmatrix = FLOAT.new_array(16)
     self.VPmatrix = FLOAT.new_array(16)
 
-    self.calcViewMatrix()
+    # все негенерированные (из ресурсника) текстуры в одном месте
 
     textures, skybox_labeled, skybox_space = self.texture_base
     self.mainTexture = mainTextures = newTexture(ctxResources, textures)
@@ -309,22 +327,42 @@ class myRenderer:
     print("skybox_labeled:", hex(skybox_labeled), skyboxLabeled)
     print("skybox_space:",   hex(skybox_space),   skyboxSpace)
 
-    self.program2 = gridProgram = d2textureProgram(mainTextures, (8, 64))
+    # все шейдерные программы в одном месте
+
+    self.program = firstProgram = mainProgram(self)
+    self.gridProgram = gridProgram = d2textureProgram(mainTextures, (8, 64), self)
+    self.skyboxes = (
+      skyBoxLoader(gridProgram, (4, 50, 384, 65, 78, 401)),
+      skyBoxLoader(d2textureProgram(skyboxLabeled, (1, 6), self), (0, 1, 2, 3, 4, 5)),
+      skyBoxLoader(d2textureProgram(skyboxSpace, (4, 3), self), (6, 4, 3, 11, 7, 5), True),
+      None,
+    )
+    self.textureChain = TextureChain(self)
+    self.pbr = PBR(self)
+
+    # настройки шейдерных программ
+
     gridProgram.add(160, 0.25, 5.5,  8, 1)
     gridProgram.add(142, 0.25, 6.75, 8, 2)
     gridProgram.add(45,  6.75, 6.75, 8, 3)
-    self.skyboxes = (
-      skyBoxLoader(gridProgram, (4, 50, 384, 65, 78, 401)),
-      skyBoxLoader(d2textureProgram(skyboxLabeled, (1, 6)), (0, 1, 2, 3, 4, 5)),
-      skyBoxLoader(d2textureProgram(skyboxSpace, (4, 3)), (6, 4, 3, 11, 7, 5), True),
-      None,
-    )
+
     self.skyboxN       = 2
     self.currentSkybox = self.skyboxes[self.skyboxN]
 
-    self.textureChain = TextureChain()
+    # загрузка моделей
 
-    union, PBR_models, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", self.textureChain)
+    triangles, cube, sphere = figures(firstProgram)
+    fboTex = lambda: self.FBO[1]
+    self.models = (
+      NoCullFaceModel(triangles),
+      TexturedModel(ScaleModel(cube, (0.5, 1, 0.5)), fboTex),
+      TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (-2, 0, 0)), lambda: dbgTextures[0]),
+      TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (-4.5, 0, 0)), lambda: dbgTextures[1]),
+      TexturedModel(TranslateModel(sphere, (0, 3, 0)), fboTex),
+    )
+
+    union, PBR_models, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", self)
+    # SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", self)
 
     union = RotateModel(union, (45, 0, 0))
     union = TranslateModel(union, (5, 0, 0))
@@ -334,17 +372,9 @@ class myRenderer:
       PBR_models2.append(TranslateModel(model, (5, 0, 0)))
     self.rbxModel, self.rbxPBRModels, self.character = union, PBR_models2, character
 
-    triangles, cube, sphere = figures()
-    fboTex = lambda: self.FBO[1]
-    self.models = (
-      NoCullFaceModel(triangles),
-      TexturedModel(ScaleModel(cube, (0.5, 1, 0.5)), fboTex),
-      TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (-2, 0, 0)), dbgTextures[0]),
-      TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (-4.5, 0, 0)), dbgTextures[1]),
-      TexturedModel(TranslateModel(sphere, (0, 3, 0)), fboTex),
-    )
+    # первый сигнал перерасчёта матриц модели во всей иерархии моделей
 
-    self.pbr = PBR()
+    self.calcViewMatrix()
 
   def onSurfaceChanged(self, gl10, width, height):
     print("📽️ onSurfaceChanged", gl10, width, height)
@@ -367,15 +397,13 @@ class myRenderer:
     multiplyMM(self.VPmatrix, 0, self.projectionM, 0, self.viewNotTranslatedM, 0)
     self.updMVP = False
 
-    location = self.program[2]["uMVPMatrix"]
-    location2 = self.pbr.uModelM, self.pbr.uInvModelM
     pbr_mat = FLOAT.new_array(16)
     setIdentityM(pbr_mat, 0)
 
-    for model in self.models: model.recalc(location, MVPmatrix)
-    self.rbxModel.recalc(location, MVPmatrix)
-    for model in self.rbxPBRModels: model.recalc(location2, pbr_mat)
-    self.character.recalc(location, location2, MVPmatrix)
+    for model in self.models: model.recalc(MVPmatrix)
+    self.rbxModel.recalc(MVPmatrix)
+    for model in self.rbxPBRModels: model.recalc(pbr_mat)
+    if self.character is not None: self.character.recalc(MVPmatrix)
 
   def calcViewMatrix(self):
     q = Quaternion.fromYPR(self.yaw, self.pitch, self.roll)
@@ -406,23 +434,25 @@ class myRenderer:
     glEnable(GL_DEPTH_TEST)
 
     program = self.program
-    enableProgram(program)
+    enableProgram(program.program)
     #checkGLError() TODO
     #glUniform1i(program[2]["uTexture"], 0)
     #checkGLError()
 
     for model in self.models: model.draw()
     self.rbxModel.draw()
-    camPos = self.camX, self.camY, self.camZ
-    self.pbr.draw(self.rbxPBRModels, camPos, self.MVPmatrix)
 
-    enableProgram(program)
-    self.character.draw(self.pbr, camPos, self.MVPmatrix)
+    self.pbr.draw(self.rbxPBRModels)
+
+    character = self.character
+    if character is not None:
+      enableProgram(program.program)
+      character.draw()
 
     skybox = self.currentSkybox
-    if skybox is not None: skybox.draw(self.VPmatrix)
+    if skybox is not None: skybox.draw()
 
-    self.program2.draw(self.WH_ratio, self.eventN)
+    self.gridProgram.draw(self.WH_ratio, self.eventN)
 
   def onDrawFrame(self, gl10):
     self.frames += 1
@@ -435,16 +465,17 @@ class myRenderer:
     if self.updMVP: self.calcMVPmatrix()
 
     character = self.character
-    yaw, pitch, roll = character.YPR
-    yaw = (yaw + 15 * self.td) % 360
-    character.setRotation(yaw, pitch, roll)
+    if character is not None:
+      yaw, pitch, roll = character.YPR
+      yaw = (yaw + 15 * self.td) % 360
+      character.setRotation(yaw, pitch, roll)
 
     glBindFramebuffer(GL_FRAMEBUFFER, self.FBO[0])
     self.drawScene()
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
-    #self.textureChain.use2(self.FBO[1])
-    self.drawScene()
+    self.textureChain.preprocessing()
+    #self.drawScene()
     #self.fps()
 
   def move(self, dx, dy):
@@ -458,7 +489,7 @@ class myRenderer:
 
   def getTByPosition(self, x, y, up):
     if not self.ready: return -1
-    return self.program2.checkPosition(x / self.W, y / self.H, up)
+    return self.gridProgram.checkPosition(x / self.W, y / self.H, up)
 
   def click(self, x, y, click_td):
     if not self.ready: return

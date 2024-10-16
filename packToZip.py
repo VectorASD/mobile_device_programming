@@ -20,6 +20,7 @@ paths = (
   ("resources/avatar.rbxm", None),
   ("resources/skybox_labeled.png", None),
   ("resources/skybox_space.webp", None),
+  ("resources/SolarSystem.rbxm", None),
 
   ("EulerRotators.py", None),
 )

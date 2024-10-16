@@ -121,6 +121,7 @@ def modelHandler(root):
 
     if className == "Model":
       humanoid = getHumanoid(node)
+      # humanoid = None
       if humanoid is not None:
         # print("👤", humanoid["_props"])
         primary = node["_refs"]["PrimaryPart"]
@@ -152,7 +153,7 @@ def modelHandler(root):
           if model:
             VBOdata, IBOdata = model
             if is_character_part: characterPBR_models.append((node, VBOdata, IBOdata, PBR_textures, accessory))
-            else: PBR_models.append((VBOdata, IBOdata, pos, PBR_textures, accessory))
+            else: PBR_models.append((pos, VBOdata, IBOdata, PBR_textures, accessory))
       else:
         r, g, b = checkColor3uint8(props["Color3uint8"])
         texture = cdnLoader(checkString(props["TextureID"]))
@@ -163,7 +164,7 @@ def modelHandler(root):
           if model:
             VBOdata, IBOdata = model
             if is_character_part: characterModels.append((node, VBOdata, IBOdata, tex, accessory))
-            else: models.append((VBOdata, IBOdata, pos, tex, accessory))
+            else: models.append(((pos, node), VBOdata, IBOdata, tex, accessory))
     elif className == "BodyColors":
       bodyColors = {
         "head": checkColor3(props["HeadColor3"]),
@@ -203,7 +204,7 @@ def modelHandler(root):
 
 
 
-def modelLoader(root, name, textureChain):
+def modelLoader(root, name, renderer):
   global dbgTextures
 
   cache = STORAGE("rbxm_modelHandler_cache")
@@ -214,44 +215,11 @@ def modelLoader(root, name, textureChain):
 
   # pants = newTexture2(pantss[0][1])
   # print("🐾pants texture:", pants)
-  bodyTexture = textureChain.use((1, 1), (0.9, 0.95, 1, 1), ())
 
-  models2 = []
-  PBR_models2 = []
+  notCharacter = CharacterModel((None, models, PBR_models), renderer)
+  union = UnionModel(notCharacter.models)
+  PBR_model = UnionModel(notCharacter.PBR_models)
 
-  for VBOdata, IBOdata, pos, tex, accessory in models:
-    if not accessory: texture = bodyTexture
-    else: # tex всегда есть
-      color, texArr = tex
-      texArr = ((newTexture2(tex), color) for tex, color in texArr)
-      if texArr: size = texture2size[texArr[0][0]]
-      else: size = 1, 1
-      print("🤗 SIZE:", size, color, texArr)
-      texture = textureChain.use(size, color, texArr)
-
-    model = Model(VBOdata, IBOdata)
-    if texture: model = TexturedModel(model, texture)
-    model = MatrixModel(model, pos)
-    models2.append(model)
-
-  for VBOdata, IBOdata, pos, PBR_textures, accessory in PBR_models:
-    (r, g, b), colorMap, otherTex = PBR_textures
-    if colorMap is None:
-      colorMap = textureChain.use((1, 1), (r, g, b, 1), ())
-    else:
-      colorMap = newTexture2(colorMap)
-      size = texture2size[colorMap]
-      colorMap = textureChain.use(size, (0, 0, 0, 1), ((colorMap, (r, g, b, 1)),))
-    metalnessMap, normalMap, roughnessMap = (None if tex is None else newTexture2(tex) for tex in otherTex)
-
-    model = Model(VBOdata, IBOdata)
-    model = PBR_Model(model, colorMap, metalnessMap, normalMap, roughnessMap)
-    model = MatrixModel(model, pos)
-    PBR_models2.append(model)
-
-  union = UnionModel(models2)
-  PBR_model = UnionModel(PBR_models2)
-
-  charModel = CharacterModel(character, textureChain)
+  charModel = None if character[0] is None else CharacterModel(character, renderer)
 
   return union, (PBR_model,), charModel
