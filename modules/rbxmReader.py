@@ -21,7 +21,7 @@ def NetworkRequests(url, contentType):
   # print(conn)
   # print(conn._m_getContentType())
 
-  chunkL = 1024
+  chunkL = 1024 * 8
   chunk = BYTE.new_array(chunkL)
   chunkB = bytes(chunk)
   IS = conn._m_getInputStream()
@@ -44,14 +44,18 @@ class Storager:
     if not base:
       try:
         with open(path, "rb") as file:
+          print("~" * 50)
           while True:
             b = file.read(1)
             if not b: break
             file.seek(-1, 1)
             name, cdn, data = (file.read(BytesIO(file.read(4)).unpack("<I")[0]) for i in range(3))
+            print(name, len(cdn), len(data))
             base[name.decode("utf-8")] = cdn, data
+          print("~" * 50)
       except OSError: pass
     self.file = open(path, "a")
+    self.lock = MyLock()
 
   def writeStr(self, str):
     str = str if type(str) is bytes else str.encode("utf-8")
@@ -66,10 +70,11 @@ class Storager:
       self.base[name]
       return
     except KeyError: pass
-    self.writeStr(name)
-    self.writeStr(cdn)
-    self.writeStr(data)
-    self.file.flush()
+    with self.lock:
+      self.writeStr(name)
+      self.writeStr(cdn)
+      self.writeStr(data)
+      self.file.flush()
     self.base[name] = cdn, data
 
   def get(self, name):
@@ -92,13 +97,14 @@ def cdnLoader(asset):
   else: ID = asset
 
   assetURL = "https://assetdelivery.roblox.com/v1/assetId/%s" % ID
-  print(assetURL)
 
   memory = storager.get(assetURL)
   if memory is not None:
     # print("CACHE!")
     cdn, content = memory
     return content
+
+  print(assetURL)
 
   # print("NETWORK!")
   status, response = NetworkRequests(assetURL, "application/json")
@@ -543,18 +549,29 @@ def rbxmReader(resource):
   return root
 
 def loadRBXM(resource, name, renderer):
-  cache = STORAGE("rbxm_cache")
-  T = time()
-  print("🐾🐾🐾")
-  try: root = cache[name]
-  except KeyError: root = None
-  if root is None:
-    root = rbxmReader(resource)
-    cache[name] = root
-  # printTree(root)
-  union, PBR_models, charModel = modelLoader(root, name, renderer)
-  print("🐾🐾🐾", time() - T)
-  return union, PBR_models, charModel
+  union = WaitingModel()
+  PBR_union = WaitingModel()
+  charModel = WaitingModel()
+
+  def func():
+    cache = STORAGE("rbxm_cache")
+    T = time()
+    print("🐾🐾🐾")
+    try: root = cache[name]
+    except KeyError: root = None
+    if root is None:
+      root = rbxmReader(resource)
+      cache[name] = root
+    # printTree(root)
+    unionM, PBR_unionM, charModelM = modelLoader(root, name, renderer)
+    union.setModel(unionM)
+    PBR_union.setModel(PBR_unionM)
+    charModel.setModel(charModelM)
+    print("🐾🐾🐾", time() - T)
+
+  Thread(func).start()
+
+  return union, PBR_union, charModel
 
 """
 Проверка самодельного BytesIO и pack/unpack функций внутри.

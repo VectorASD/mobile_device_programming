@@ -16,6 +16,7 @@ from java.nio.Buffer import NIOBuffer
 from java.nio.ByteBuffer import jByteBuffer
 from java.nio.ByteOrder import ByteOrder
 from java.lang.Math import Math
+from java.util.concurrent.locks.ReentrantLock import ReentrantLock
 from android.graphics.Bitmap import Bitmap
 from android.graphics.BitmapFactory import BitmapFactory
 from android.graphics.BitmapFactory_._Options import BitmapFactoryOptions
@@ -28,6 +29,14 @@ FLOATarr = ()._a_float
 #print(INT.new_array(10)[:])
 #print(INT.new_array(10, 12)[:])
 #exit()
+
+class MyLock:
+  def __init__(self):
+    self.obj = obj = ReentrantLock()
+    self.lock = obj._mw_lock()
+    self.unlock = obj._mw_unlock()
+  def __enter__(self): self.lock()
+  def __exit__(self, exc, val, trace): self.unlock()
 
 
 
@@ -308,7 +317,7 @@ def newProgram(vCode, fCode, attribs, uniforms):
   return program, attribLocs, uniformLocs
 
 def checkProgram(program):
-  if type(program) is str:
+  if type(program) is not tuple:
     print2("💥 shader program error:")
     print2(program)
     exit()

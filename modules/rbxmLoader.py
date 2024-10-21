@@ -77,6 +77,10 @@ def checkColor3(prop):
   type, value = prop
   if type != 0x0c: exit("Это не Color3: %s" % prop)
   return value
+def checkVector3(prop):
+  type, value = prop
+  if type != 0x0e: exit("Это не Vector3: %s" % prop)
+  return value
 def checkCFrame(prop):
   type, value = prop
   if type != 0x10: exit("Это не CFrame: %s" % prop)
@@ -105,12 +109,59 @@ def makeChainTree(node, used, level = ""):
   return tuple((CFrame2mat(C0), mat_invertor(CFrame2mat(C1)), ref_node["_id"], makeChainTree(ref_node, used, level)) for ref_node, C0, C1 in node["_refs1"])
 
 def modelHandler(root):
+  mesh_cache = STORAGE("mesh_cache")
+
+  def meshPart(node, pos, accessory, is_character_part):
+    props = node["_props"]
+    mesh_id = checkString(props["MeshId"])
+    id = node["_id"]
+    isBody = is_character_part and not accessory
+
+    #print("...", checkVector3(props["size"]), checkVector3(props["InitialSize"]))
+    x, y, z = checkVector3(props["size"])
+    ix, iy, iz = checkVector3(props["InitialSize"])
+    scaleMat = (x / ix, 0, 0, 0, 0, y / iy, 0, 0, 0, 0, z / iz, 0, 0, 0, 0, 1)._a_float
+    multiplyMM(pos, 0, pos, 0, scaleMat, 0)
+    # multiplyMM(pos, 0, scaleMat, 0, pos, 0) не просёк разницы. Возможно, порядок действительно не играет никакой роли
+
+    try:
+      model = mesh_cache[mesh_id]
+      print("Cached mesh:", mesh_id)
+    except KeyError:
+      mesh = cdnLoader(mesh_id)
+      if not mesh: return
+
+      model = meshReader(mesh, True)
+      if not model: return
+
+      mesh_cache[mesh_id] = model
+
+    VBOdata, IBOdata = model
+
+    SA = getSurfaceAppearance(node)
+    if SA:
+      SA_props = SA["_props"]
+      color = checkColor3(SA_props["Color"])
+      colorMap = cdnLoader(checkString(SA_props["ColorMap"]))
+      metalnessMap = cdnLoader(checkString(SA_props["MetalnessMap"]))
+      normalMap = cdnLoader(checkString(SA_props["NormalMap"]))
+      roughnessMap = cdnLoader(checkString(SA_props["RoughnessMap"]))
+      PBR_textures = color, colorMap, (metalnessMap, normalMap, roughnessMap)
+      result = node, pos, VBOdata, IBOdata, PBR_textures, isBody
+    else:
+      r, g, b = checkColor3uint8(props["Color3uint8"])
+      texture = cdnLoader(checkString(props["TextureID"]))
+      texture = ((texture, (1, 1, 1, 1)),) if texture else ()
+      tex = (r / 255, g / 255, b / 255, 1), texture
+      result = node, pos, VBOdata, IBOdata, tex, isBody
+
+    return SA, result
+
   def recurs(node, root_pos):
     nonlocal motorTree
 
     id, parent, childs, className, name = node["_id"], node["_parent"], node["_childs"], node["_class"], node["_name"]
     props = node["_props"]
-    is_character_part = id in used_in_tree
 
     if root_pos is None:
       pos = getCFrame(props)
@@ -135,36 +186,21 @@ def modelHandler(root):
       if accessory: name = parent["_name"]
       print("LOADING:", name)
 
-      pos = CFrame2mat(getCFrame(props))
-      multiplyMM(pos, 0, root_pos, 0, pos, 0)
+      is_character_part = id in used_in_tree
 
-      mesh = cdnLoader(checkString(props["MeshId"]))
-      SA = getSurfaceAppearance(node)
-      if SA:
-        SA_props = SA["_props"]
-        color = checkColor3(SA_props["Color"])
-        colorMap = cdnLoader(checkString(SA_props["ColorMap"]))
-        metalnessMap = cdnLoader(checkString(SA_props["MetalnessMap"]))
-        normalMap = cdnLoader(checkString(SA_props["NormalMap"]))
-        roughnessMap = cdnLoader(checkString(SA_props["RoughnessMap"]))
-        PBR_textures = color, colorMap, (metalnessMap, normalMap, roughnessMap)
-        if mesh:
-          model = meshReader(mesh, True)
-          if model:
-            VBOdata, IBOdata = model
-            if is_character_part: characterPBR_models.append((node, VBOdata, IBOdata, PBR_textures, accessory))
-            else: PBR_models.append((pos, VBOdata, IBOdata, PBR_textures, accessory))
+      if is_character_part: pos = (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)._a_float
       else:
-        r, g, b = checkColor3uint8(props["Color3uint8"])
-        texture = cdnLoader(checkString(props["TextureID"]))
-        texture = ((texture, (1, 1, 1, 1)),) if texture else ()
-        tex = (r, g, b, 1), texture
-        if mesh:
-          model = meshReader(mesh, False)
-          if model:
-            VBOdata, IBOdata = model
-            if is_character_part: characterModels.append((node, VBOdata, IBOdata, tex, accessory))
-            else: models.append(((pos, node), VBOdata, IBOdata, tex, accessory))
+        pos = CFrame2mat(getCFrame(props))
+        multiplyMM(pos, 0, root_pos, 0, pos, 0)
+
+      isSA, mesh = meshPart(node, pos, accessory, is_character_part)
+      if is_character_part:
+        if isSA: characterPBR_models.append(mesh)
+        else: characterModels.append(mesh)
+      else:
+        if isSA: PBR_models.append(mesh)
+        else: models.append(mesh)
+
     elif className == "BodyColors":
       bodyColors = {
         "head": checkColor3(props["HeadColor3"]),
@@ -185,6 +221,7 @@ def modelHandler(root):
       color = checkColor3(props["Color3"])
       asset = cdnLoader(checkString(props["PantsTemplate"]))
       pantss.append((color, asset))
+
     for child in childs: recurs(child, root_pos)
 
   models = []
@@ -218,8 +255,9 @@ def modelLoader(root, name, renderer):
 
   notCharacter = CharacterModel((None, models, PBR_models), renderer)
   union = UnionModel(notCharacter.models)
-  PBR_model = UnionModel(notCharacter.PBR_models)
+  PBR_union = UnionModel(notCharacter.PBR_models)
 
   charModel = None if character[0] is None else CharacterModel(character, renderer)
+  print("🐕", len(models), len(PBR_models), len(character[1]), len(character[2]))
 
-  return union, (PBR_model,), charModel
+  return union, PBR_union, charModel

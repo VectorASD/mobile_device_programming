@@ -237,49 +237,46 @@ class CharacterModel:
 
     self.motorTree, models, PBR_models = character
     alternativeMode = self.motorTree is None
+    VIEW = renderer.view
 
     # сразу 3 шейдерные программы в одном месте 🫢
-    program = renderer.program
+    program = renderer.noPBR # renderer.program
     textureChain = renderer.textureChain
     PBR = renderer.pbr
-
-    bodyTexture = textureChain.use((1, 1), (0.9, 0.95, 1, 1), ())
+    #bodyTexture = await(VIEW, lambda: textureChain.use((1, 1), (1, 0.95, 0.9, 1), ()))
     self.models = models2 = []
     self.PBR_models = PBR_models2 = []
 
-    for node, VBOdata, IBOdata, tex, accessory in models:
-      if not accessory: texture = bodyTexture
-      else: # tex всегда есть
-        color, texArr = tex
-        texArr = ((newTexture2(tex), color) for tex, color in texArr)
-        size = texture2size[texArr[0][0]] if texArr else (1, 1)
-        print("🤗 SIZE:", size, color, texArr)
-        texture = textureChain.use(size, color, texArr)
-        if texArr: dbgTextures = texArr[0][0], texture
-  
-      model = Model(VBOdata, IBOdata, program)
-      if texture: model = TexturedModel(model, texture)
-      if alternativeMode:
-        pos, node = node
-        if not accessory and node["_name"] != "Head": model = ScaleModel(model, (1, 1.25 * 1.05, 1)) # TODO
-        models2.append(MatrixModel(model, pos))
-      else:
-        if not accessory and node["_name"] != "Head": model = ScaleModel(model, (1, 1.25 * 1.05, 1)) # TODO
-        models2.append((node["_id"], model))
+    for node, pos, VBOdata, IBOdata, tex, isBody in models:
+      #if isBody: texture = bodyTexture
+      #else: # tex всегда есть
+      color, texArr = tex
+      texArr = ((await(VIEW, lambda: newTexture2(tex)), color) for tex, color in texArr)
+      size = texture2size[texArr[0][0]] if texArr else (1, 1)
+      print("🤗 SIZE%s:" % (" (body)" if isBody else ""), size, color, texArr)
+      texture = await(VIEW, lambda: textureChain.use(size, color, texArr))
+      if texArr: dbgTextures = texArr[0][0], texture
 
-    for node, VBOdata, IBOdata, PBR_textures, accessory in PBR_models:
+      model = await(VIEW, lambda: Model(VBOdata, IBOdata, program))
+      if texture: model = TexturedModel(model, texture)
+      # print("💥🔥", pos[:])
+      model = MatrixModel(model, pos)
+      models2.append(model if alternativeMode else (node["_id"], model))
+
+    for node, pos, VBOdata, IBOdata, PBR_textures, isBody in PBR_models:
       (r, g, b), colorMap, otherTex = PBR_textures
       if colorMap is None:
-        colorMap = textureChain.use((1, 1), (r, g, b, 1), ())
+        colorMap = await(VIEW, lambda: textureChain.use((1, 1), (r, g, b, 1), ()))
       else:
-        colorMap = newTexture2(colorMap)
+        colorMap = await(VIEW, lambda: newTexture2(colorMap))
         size = texture2size[colorMap]
-        colorMap = textureChain.use(size, (0, 0, 0, 1), ((colorMap, (r, g, b, 1)),))
-      metalnessMap, normalMap, roughnessMap = (None if tex is None else newTexture2(tex) for tex in otherTex)
+        colorMap = await(VIEW, lambda: textureChain.use(size, (0, 0, 0, 1), ((colorMap, (r, g, b, 1)),)))
+      metalnessMap, normalMap, roughnessMap = (None if tex is None else await(VIEW, lambda: newTexture2(tex)) for tex in otherTex)
 
-      model = Model(VBOdata, IBOdata, PBR)
+      model = await(VIEW, lambda: Model(VBOdata, IBOdata, PBR))
       model = PBR_Model(model, colorMap, metalnessMap, normalMap, roughnessMap)
-      PBR_models2.append(MatrixModel(model, node) if alternativeMode else (node["_id"], model))
+      model = MatrixModel(model, pos)
+      PBR_models2.append(model if alternativeMode else (node["_id"], model))
 
     if alternativeMode: return
 
@@ -339,8 +336,42 @@ class CharacterModel:
   def draw(self):
     for id, model in self.models: model.draw()
     self.renderer.pbr.draw(self.PBR_models2)
+  
+  def delete(self):
+    for id, model in self.models: model.delete()
+    # TODO
 
 
+
+class WaitingModel:
+  def __init__(self):
+    self.saved_mat = None
+    self.model = None
+    self.draw = lambda: None
+    self.needDelete = False
+  def setModel(self, model):
+    print("SET MODEL:", model)
+    self.model = model
+    self.recalc2()
+
+  def recalc(self, mat):
+    self.saved_mat = mat
+    self.recalc2()
+
+  def recalc2(self):
+    mat = self.saved_mat
+    model = self.model
+    if mat is None or model is None: return
+    print("GET MODEL:", model)
+    model.recalc(mat)
+    self.delete = model.delete
+    if self.needDelete: model.delete()
+    else:
+      self.recalc = model.recalc
+      self.draw = model.draw
+
+  def delete(self): # если удалили модель до того, как она загрузилась :/
+    self.needDelete = True
 
 
 
@@ -484,7 +515,7 @@ void main() {
     glDepthFunc(GL_LEQUAL)
     enableProgram(SkyBox.program)
     glUniformMatrix4fv(self.uVPMatrix, 1, False, self.renderer.VPmatrix, 0)
-    glUniform1f(self.uSkybox, 0)
+    glUniform1i(self.uSkybox, 0)
     glBindTexture(GL_TEXTURE_CUBE_MAP, self.textureId)
 
     SkyBox.model.draw()
@@ -547,7 +578,6 @@ class TextureChain:
   def __init__(self, renderer):
     self.genProgram()
     self.genModel()
-    # self.FBOs = {}
     self.FBO = None
     self.renderer = renderer
 
@@ -591,8 +621,6 @@ void main() {
 
   def use(self, size, baseColor, textures = ()):
     W, H = size
-    # try: fbo = self.FBOs[size]
-    # except KeyError: fbo = self.FBOs[size] = newFrameBuffer(W, H, False)
     fbo, texture, _ = newFrameBuffer(W, H, False, self.FBO, GL_LINEAR)
     self.FBO = fbo
 
@@ -624,9 +652,10 @@ void main() {
 
     return texture
 
-  def preprocessing(self):
+  def postprocessing(self):
     enableProgram(self.program)
-    glUniform1f(self.uTexture, 0)
+    glUniform1i(self.uTexture, 0)
+    glUniform4f(self.uTextureColor, 1, 1, 1, 1)
 
     glBindTexture(GL_TEXTURE_2D, self.renderer.FBO[1])
     self.model.draw()
@@ -767,10 +796,11 @@ void main() {
     self.uLightPos = uniforms["uLightPos"]
     self.uUseNormalMap = uniforms["uUseNormalMap"]
     def func():
-      glVertexAttribPointer(attribs["vPosition"], 3, GL_FLOAT, False, 12 * 4, 0)
-      glVertexAttribPointer(attribs["vNormal"], 3, GL_FLOAT, False, 12 * 4, 3 * 4)
-      glVertexAttribPointer(attribs["vUV"],       2, GL_FLOAT, False, 12 * 4, 6 * 4)
-      glVertexAttribPointer(attribs["vTangent"], 4, GL_FLOAT, False, 12 * 4, 8 * 4)
+      a = attribs # nonlocal to local
+      glVertexAttribPointer(a["vPosition"], 3, GL_FLOAT, False, 12 * 4, 0)
+      glVertexAttribPointer(a["vNormal"], 3, GL_FLOAT, False, 12 * 4, 3 * 4)
+      glVertexAttribPointer(a["vUV"],       2, GL_FLOAT, False, 12 * 4, 6 * 4)
+      glVertexAttribPointer(a["vTangent"], 4, GL_FLOAT, False, 12 * 4, 8 * 4)
     self.func = func
     self.location = uModelM, uInvModelM
     PBR_Model.PBR = self
@@ -786,7 +816,9 @@ void main() {
     glUniformMatrix4fv(self.uVPMatrix, 1, False, renderer.MVPmatrix, 0)
     glUniform3f(self.uLightPos, 0, 3, 0)
 
-    for model in models: model.draw()
+    try: models.draw()
+    except AttributeError:
+      for model in models: model.draw()
 
 class PBR_Model:
   PBR = None
@@ -815,6 +847,45 @@ class PBR_Model:
 
   def delete(self): self.model.delete()
   def clone(self): return self.model.clone()
+
+
+
+class NoPBR:
+  def __init__(self, renderer):
+    self.program = _, attribs, uniforms = checkProgram(newProgram("""
+attribute vec3 vPosition;
+//attribute vec3 vNormal;
+attribute vec2 vUV;
+//attribute vec4 vTangent;
+
+uniform mat4 uMVPMatrix;
+
+varying vec2 vaUV;
+
+void main() {
+  gl_Position = uMVPMatrix * vec4(vPosition.xyz, 1);
+  vaUV = vUV;
+}
+""", """
+precision mediump float;
+uniform sampler2D uTexture;
+varying vec2 vaUV;
+
+void main() {
+  gl_FragColor = texture2D(uTexture, vaUV).rgba;
+}
+""", ('vPosition', 'vUV'), ('uMVPMatrix', 'uTexture')))
+    uMVPMatrix    = uniforms["uMVPMatrix"]
+    self.uTexture = uniforms["uTexture"]
+    def func():
+      a = attribs # nonlocal to local
+      glVertexAttribPointer(a["vPosition"], 3, GL_FLOAT, False, 12 * 4, 0)
+      #glVertexAttribPointer(a["vNormal"], 3, GL_FLOAT, False, 12 * 4, 3 * 4)
+      glVertexAttribPointer(a["vUV"],       2, GL_FLOAT, False, 12 * 4, 6 * 4)
+      #glVertexAttribPointer(a["vTangent"], 4, GL_FLOAT, False, 12 * 4, 8 * 4)
+    self.func = func
+    self.renderer = renderer
+    self.location = uMVPMatrix
 
 
 

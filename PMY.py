@@ -255,19 +255,34 @@ def figures(shaderProgram):
     x, y, z, U, V = VBOdata[n]
     L = (x * x + y * y + z * z) ** 0.5
     # r, g, b = (sin(n * 3) + 2) / 3, (sin(n * 4) + 2) / 3, (sin(n * 5) + 2) / 3
+    L = 1 / L * 0.5 + L * 0.5
     VBOextend((x / L, y / L, z / L, 0, 0, 0, 0, (U + 1) / 2, (V + 1) / 2))
   sphere = Model(VBOdata2, IBOdata, shaderProgram)
   return triangles, cube, sphere
 
 
 
+def hierarchy(model, level = ""): # TODO
+  try: next = model.model
+  except AttributeError: next = None
+  try: models = model.models
+  except AttributeError: models = None
+  level += "| "
+  if next: hierarchy(next, level)
+  if models:
+    for model in models: hierarchy(model, level)
+
+
+
 class myRenderer:
-  def __init__(self):
-    self.frames = self.last_frames = 0
+  def __init__(self, activity, view):
+    self.activity  = activity
+    self.view      = view
+    self.frames    = self.last_frames = 0
     self.last_time = time() + 0.1
     self.frame_pos = 0
     self.frame_arr = []
-    self.fpsS = "?"
+    self.fpsS      = "?"
     self.yaw, self.pitch, self.roll = 180, 0, 0
     self.camX, self.camY, self.camZ = 0, 0, -3.5
     self.eventN = 0
@@ -312,10 +327,10 @@ class myRenderer:
 
     # матрицы
 
-    self.viewM = FLOAT.new_array(16)
+    self.viewM       = FLOAT.new_array(16)
     self.projectionM = FLOAT.new_array(16)
-    self.MVPmatrix = FLOAT.new_array(16)
-    self.VPmatrix = FLOAT.new_array(16)
+    self.MVPmatrix   = FLOAT.new_array(16)
+    self.VPmatrix    = FLOAT.new_array(16)
 
     # все негенерированные (из ресурсника) текстуры в одном месте
 
@@ -339,6 +354,7 @@ class myRenderer:
     )
     self.textureChain = TextureChain(self)
     self.pbr = PBR(self)
+    self.noPBR = NoPBR(self)
 
     # настройки шейдерных программ
 
@@ -361,20 +377,28 @@ class myRenderer:
       TexturedModel(TranslateModel(sphere, (0, 3, 0)), fboTex),
     )
 
-    union, PBR_models, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", self)
-    # SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", self)
+    if True:
+      union, PBR_model, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", self)
+      SolarSystem = WaitingModel()
+    else:
+      SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", self)
+      union = PBR_model = character = WaitingModel()
+    hierarchy(SolarSystem)
 
     union = RotateModel(union, (45, 0, 0))
-    union = TranslateModel(union, (5, 0, 0))
-    PBR_models2 = []
-    for model in PBR_models:
-      model = RotateModel(model, (45, 0, 0))
-      PBR_models2.append(TranslateModel(model, (5, 0, 0)))
-    self.rbxModel, self.rbxPBRModels, self.character = union, PBR_models2, character
+    PBR_model = RotateModel(PBR_model, (45, 0, 0))
+    self.rbxModel = TranslateModel(union, (5, 0, 0))
+    self.rbxPBRmodel = TranslateModel(PBR_model, (5, 0, 0))
+    self.character = character
+    self.SolarSystem = SolarSystem
 
     # первый сигнал перерасчёта матриц модели во всей иерархии моделей
 
     self.calcViewMatrix()
+
+    pbr_mat = FLOAT.new_array(16)
+    setIdentityM(pbr_mat, 0)
+    self.rbxPBRmodel.recalc(pbr_mat)
 
   def onSurfaceChanged(self, gl10, width, height):
     print("📽️ onSurfaceChanged", gl10, width, height)
@@ -397,13 +421,10 @@ class myRenderer:
     multiplyMM(self.VPmatrix, 0, self.projectionM, 0, self.viewNotTranslatedM, 0)
     self.updMVP = False
 
-    pbr_mat = FLOAT.new_array(16)
-    setIdentityM(pbr_mat, 0)
-
     for model in self.models: model.recalc(MVPmatrix)
     self.rbxModel.recalc(MVPmatrix)
-    for model in self.rbxPBRModels: model.recalc(pbr_mat)
-    if self.character is not None: self.character.recalc(MVPmatrix)
+    if self.character: self.character.recalc(MVPmatrix)
+    self.SolarSystem.recalc(MVPmatrix)
 
   def calcViewMatrix(self):
     q = Quaternion.fromYPR(self.yaw, self.pitch, self.roll)
@@ -442,12 +463,14 @@ class myRenderer:
     for model in self.models: model.draw()
     self.rbxModel.draw()
 
-    self.pbr.draw(self.rbxPBRModels)
+    self.pbr.draw(self.rbxPBRmodel)
 
     character = self.character
-    if character is not None:
+    if character:
       enableProgram(program.program)
       character.draw()
+
+    self.SolarSystem.draw()
 
     skybox = self.currentSkybox
     if skybox is not None: skybox.draw()
@@ -464,7 +487,8 @@ class myRenderer:
     self.eventHandler()
     if self.updMVP: self.calcMVPmatrix()
 
-    character = self.character
+    try: character = self.character.model
+    except AttributeError: character = None
     if character is not None:
       yaw, pitch, roll = character.YPR
       yaw = (yaw + 15 * self.td) % 360
@@ -474,8 +498,8 @@ class myRenderer:
     self.drawScene()
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
-    self.textureChain.preprocessing()
-    #self.drawScene()
+    self.textureChain.postprocessing()
+    #print("🫢", glGetError())
     #self.fps()
 
   def move(self, dx, dy):
@@ -541,7 +565,7 @@ class activityHandler:
     activity._m_getWindow()._m_setFlags(FLAG_FULLSCREEN, FLAG_FULLSCREEN) # Remove notification bar
 
     view = GLSurfaceView(ctx)
-    renderer = myRenderer()
+    renderer = myRenderer(activity, view)
     renderer2 = rm.renderer(renderer)
     print("V:", view)
     print("R:", renderer2)
@@ -580,22 +604,10 @@ class activityHandler:
     prevXY, startXYT, renderer = self.prevXY, self.startXYT, self.renderer
     actionN = action >> 8
     action &= 255
-    W32 = renderer.W / 32
-    W5_5, W6 = W32 * 5.5, W32 * 6
-    H8 = renderer.H - W5_5
-    H8b = H8 - W5_5
     T = time()
     if action in ACTION_DOWN:
       x, y, id = getX(actionN), getY(actionN), getPointerId(actionN)
       t = renderer.getTByPosition(x, y, 0.01)
-      """
-      if x < W6 and y > H8b:
-        prevXY[id] = None
-        if y > H8: self.eventB.add(id)
-        else: self.eventA.add(id)
-        renderer.event(bool(self.eventA), bool(self.eventB))
-      else: prevXY[id] = x, y
-      """
       if t > 0:
         prevXY[id] = None
         if t == 1: self.eventA.add(id)
