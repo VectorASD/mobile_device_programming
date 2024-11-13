@@ -101,7 +101,7 @@ GL_VIEWPORT = GLES20._f_GL_VIEWPORT
 glCreateShader = GLES20._mw_glCreateShader(int)
 glShaderSource = GLES20._mw_glShaderSource(int, str)
 glCompileShader = GLES20._mw_glCompileShader(int)
-glGetShaderiv = GLES20._mw_glGetShaderiv(int, int, INTarr, INT)
+glGetShaderiv = GLES20._mw_glGetShaderiv(int, int, INTarr, int)
 glGetShaderInfoLog = GLES20._mw_glGetShaderInfoLog(int)
 glDeleteShader = GLES20._mw_glDeleteShader(int)
 
@@ -238,7 +238,7 @@ class MyBuffer:
 
     self.put = put = fb._mw_put(FLOATarr if isFloat else INTarr)
     self.getPos = fb._mw_position()
-    self.setPos = pos = fb._mw_position(INT)
+    self.setPos = pos = fb._mw_position(int)
     self.capacity = fb._mw_capacity()
     self.fb = fb # float buffer (либо int buffer)
     self.clear = fb._mw_clear()
@@ -321,6 +321,7 @@ def checkProgram(program):
     print2("💥 shader program error:")
     print2(program)
     exit()
+  if len(program) == 1: program = program[0]
   print2("✅ OK shader program:", program)
   return program
 

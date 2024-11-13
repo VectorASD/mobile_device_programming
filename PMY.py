@@ -275,6 +275,8 @@ def hierarchy(model, level = ""): # TODO
 
 
 class myRenderer:
+  glVersion = 2
+
   def __init__(self, activity, view):
     self.activity  = activity
     self.view      = view
@@ -538,6 +540,10 @@ class myRenderer:
 
 
 
+import myGL31
+
+
+
 main_xml = """
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
@@ -565,11 +571,12 @@ class activityHandler:
     activity._m_getWindow()._m_setFlags(FLAG_FULLSCREEN, FLAG_FULLSCREEN) # Remove notification bar
 
     view = GLSurfaceView(ctx)
-    renderer = myRenderer(activity, view)
+    #renderer = myRenderer(activity, view)
+    renderer = gpuRenderer(activity, view)
     renderer2 = rm.renderer(renderer)
     print("V:", view)
     print("R:", renderer2)
-    view._m_setEGLContextClientVersion(2)
+    view._m_setEGLContextClientVersion(renderer.glVersion)
     view._m_setRenderer(renderer2)
     activity._mw_setContentView(View)(view)
 
