@@ -431,6 +431,126 @@ class Quaternion:
 
 
 
+class d2textureProgram():
+  def __init__(self, texture, size, renderer):
+    self.program = _, attribs, uniforms = checkProgram(newProgram("""
+attribute vec2 vPosition;
+attribute vec2 vUV;
+attribute float vType;
+
+uniform float uAspect;
+uniform int uEvent;
+
+varying vec2 vaUV;
+varying float vaActive;
+
+bool getBit(int num, int b) {
+  int bit = 0;
+  int min = 128;
+  for (int i = 7; i >= b; i--) {
+    if (num >= min) {
+      num -= min;
+      if (i == b) return true;
+    }
+    min /= 2;
+  }
+  return false;
+}
+
+void main() {
+  gl_Position = vec4(vPosition.x, vPosition.y * uAspect - (1. - uAspect), 0, 1);
+  vaUV = vUV;
+
+  int T = int(vType);
+  if (T < 1 || T > 3) vaActive = 1.;
+  else vaActive = getBit(uEvent, T - 1) ? 0.5 : 1.;
+}
+""", """
+precision mediump float;
+
+varying vec2 vaUV;
+varying float vaActive;
+
+uniform sampler2D uTexture;
+
+void main() {
+	float X = vaActive;
+  vec4 clr = texture2D(uTexture, vaUV);
+  gl_FragColor = vec4(clr.rgb * X, clr.a);
+}
+""", ('vPosition', 'vUV', 'vType'), ('uTexture', 'uAspect', 'uEvent')))
+    vPosition = attribs["vPosition"]
+    vUV       = attribs["vUV"]
+    vType     = attribs["vType"]
+    def func():
+      glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 5 * 4, 0)
+      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 5 * 4, 2 * 4)
+      glVertexAttribPointer(vType,     1, GL_FLOAT, False, 5 * 4, 4 * 4)
+    self.func = func
+    self.location = None
+
+    self.uTexture = uniforms["uTexture"]
+    self.uAspect = uniforms["uAspect"]
+    self.uEvent = uniforms["uEvent"]
+    self.models = []
+    self.modelPositions = []
+    self.aspect = 1
+    self.texture = texture
+    self.renderer = renderer
+    self.size        = W, H = size
+    self.textureSize = tW, tH = texture2size[texture]
+    self.tileSize    = (tW + W - 1) // W, (tH + H - 1) // H
+
+  def createModel(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
+    W, H = self.size
+    L /= 2
+    L1 = L - 1
+    pLx, pRx, pLy, pRy = (posX - L) / L, (posX - L1) / L, (posY - L) / -L, (posY - L1) / -L
+    y, x = divmod(id, W)
+    Lx, Rx, Ly, Ry = x / W, (x + 1) / W, y / H, (y + 1) / H
+    if invertX: Lx, Rx = Rx, Lx
+    if invertY: Ly, Ry = Ry, Ly
+    return Model((
+      pLx, pLy, Lx, Ly, t,
+      pRx, pLy, Rx, Ly, t,
+      pRx, pRy, Rx, Ry, t,
+      pLx, pRy, Lx, Ry, t,
+    ), (
+      0, 1, 2, 0, 2, 3,
+    ), self)
+  def add(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
+    model = self.createModel(id, posX, posY, L, t, invertX, invertY)
+    self.models.append(model)
+    self.modelPositions.append((posX / L, (posX + 1) / L, posY / L, (posY + 1) / L, t))
+
+  def draw(self, aspect, eventN, customModels = None):
+    self.aspect = aspect
+
+    glDisable(GL_DEPTH_TEST)
+    glDisable(GL_CULL_FACE)
+    enableProgram(self.program)
+    glUniform1f(self.uAspect, aspect)
+    glUniform1i(self.uEvent, eventN)
+    glUniform1i(self.uTexture, 0)
+    glBindTexture(GL_TEXTURE_2D, self.texture)
+
+    models = customModels if customModels is not None else self.models
+    for model in models: model.draw()
+
+    glEnable(GL_DEPTH_TEST)
+    glEnable(GL_CULL_FACE)
+
+  def checkPosition(self, x, y, up):
+    # x и y от 0 до 1
+    aspect = self.aspect
+    y = (y - (1 - aspect)) / aspect
+    result = -1
+    for x1, x2, y1, y2, t in self.modelPositions:
+      if x1 - up <= x and x <= x2 + up and y1 - up <= y and y <= y2 + up: result = t
+    return result
+
+
+
 class SkyBox:
   program = None
   model = None

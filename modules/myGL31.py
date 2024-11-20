@@ -41,6 +41,39 @@ glGetIntegeri_v = GLES30._mw_glGetIntegeri_v(int, int, INTarr, int) # target, in
 
 
 
+from android.view.View import View
+from android.view.Gravity import Gravity
+from android.view.ViewGroup import ViewGroup
+from android.view.ViewGroup_._LayoutParams import ViewGroupLayoutParams
+from android.widget.EditText import EditText
+from android.widget.GridLayout import GridLayout
+from android.widget.LinearLayout import LinearLayout
+from android.widget.TableLayout import TableLayout
+from android.widget.TableRow import TableRow
+from android.widget.TableRow_._LayoutParams import TableRowLayoutParams
+
+vg_MATCH_PARENT = ViewGroupLayoutParams._f_MATCH_PARENT
+vg_WRAP_CONTENT = ViewGroupLayoutParams._f_WRAP_CONTENT
+table_WRAP_CONTENT = TableRowLayoutParams._f_WRAP_CONTENT
+Gravity_CENTER = Gravity._f_CENTER
+
+def keyboard(ctx):
+  tableLayout = TableLayout(ctx)
+  tableLayout._m_setLayoutParams(ViewGroupLayoutParams(vg_MATCH_PARENT, vg_WRAP_CONTENT))
+  # for i in sorted(tableLayout.methods()): print(i)
+  for row in range(10):
+    tableRow = TableRow(ctx)
+    tableRow._m_setLayoutParams(TableRowLayoutParams(0, table_WRAP_CONTENT, 1.).cast(ViewGroupLayoutParams))
+    for col in range(5):
+      edit = EditText(ctx)
+      edit._m_setGravity(Gravity_CENTER)
+      tableRow._m_addView(edit.cast(View))
+    print(tableRow.cast(View))
+    tableLayout._m_addView(tableRow)
+  return tableLayout
+
+
+
 def newProgram31(cCode):
   cShader = newShader(GL_COMPUTE_SHADER, cCode)
   if type(cShader) is str: return "Ошибка компиляции C-шейдера: " + cShader
@@ -186,23 +219,10 @@ void main() {
 
 
 
-def shift(L, R):
-  return (L + (1 << R - 1) - 1) >> R
-
 class gpuRenderer:
-  glVersion = 3
-
-  def __init__(self, activity, view):
-    self.activity  = activity
-    self.view      = view
-    self.seeds = 86400000 # 24 * 60 * 60 * 1000 = 0x5265c00
-    # self.width, self.height = 0x1080, 0x5000
-    # self.seeds = self.width * self.height # 0x5280000
-    self.used = False
-
-  def onSurfaceCreated(self, gl10, config):
-    print("📽️ onSurfaceCreated", gl10, config)
-    glClearColor(0.9, 0.95, 1, 0)
+  def init(self):
+    def shift(L, R):
+      return (L + (1 << R - 1) - 1) >> R
 
     # self.seeds в битах!
     # self.seeds >> 3 в байтах!
@@ -236,9 +256,10 @@ void main() {
   if (seed < %su) output_data.elements[seed] = 0u;
 }""" % ssbo2_items))
 
-    code = gpu_code_generator("1234567890", 15, "*7*30" +"*"*20 + "*183*" +"*"*20 + "15***")
-    #code = gpu_code_generator("1234567890", 5, "*7*3")
+    #code = gpu_code_generator("1234567890", 15, "*7*30" +"*"*20 + "*183*" +"*"*20 + "15***")
+    code = gpu_code_generator("1234567890", 5, "*7*3")
     #code = gpu_code_generator("1234567890", 5, "**********")
+    #code = gpu_code_generator("1234567890", 5, "38439110")
     print(code)
     self.shader = checkProgram(newProgram31("""#version 310 es
 
@@ -307,37 +328,80 @@ void main() {
     arr = readIntOutput(self.readBuffer(0, 0, ssbo_size))
     print(arr[:64])
 
-    for n in range(4): # len(arr)):
-      item = arr[n]
-      if item:
-        for bit in range(32):
-          #print(n << 5 | bit, item, item >> bit, item >> bit & 1, "✅" if item >> bit & 1 else "🐓")
-          if item >> bit & 1: print("✅", n << 5 | bit)
-
     T = time()
     self.calculate(self.counter, ssbo_items)
     td = time() - T
     print("Time:", td)
 
     arr2 = readIntOutput(self.readBuffer(1, 0, ssbo2_size))
-    print("Всего найдено радиограмм:", sum(arr2))
+    Sum = sum(arr2)
+    print("Всего найдено радиограмм:", Sum)
     offset = 0
-    for count in arr2:
-      if count:
+    count = 0
+    for finded in arr2:
+      if finded:
         for n in range(offset, offset + 256):
           item = arr[n]
           if item:
             for bit in range(32):
               #print(n << 5 | bit, item, item >> bit, item >> bit & 1, "✅" if item >> bit & 1 else "🐓")
-              if item >> bit & 1: print("✅", n << 5 | bit)
+              if item >> bit & 1:
+                print("✅", n << 5 | bit)
+                count += 1
+                if count >= 16 and Sum > 32:
+                  print("... и ещё %d радиограмм" % (Sum - 16))
+                  return
       offset += 256
     # self.Print(0, (self.seeds >> 3) - 256, 256)
     #arr = readIntOutput(self.readBuffer(0, 0, 0x100 * 4))
     #print("👍", ((arr[i] >> 16, arr[i] & 0xffff) for i in range(256)))
 
+
+
+  glVersion = 3
+
+  def __init__(self, activity, view):
+    self.activity  = activity
+    self.view      = view
+    self.seeds = 86400000 # 24 * 60 * 60 * 1000 = 0x5265c00
+    # self.width, self.height = 0x1080, 0x5000
+    # self.seeds = self.width * self.height # 0x5280000
+    self.ready = False
+    self.W = self.H = self.WH_ratio = -1
+    self.eventN = 0
+    self.ctx = activity._m_getApplicationContext().cast(Context)
+    
+    #kb = keyboard(self.ctx)
+    #print("KB:", kb)
+
+  def onSurfaceCreated(self, gl10, config):
+    print("📽️ onSurfaceCreated", gl10, config)
+    glClearColor(0.9, 0.95, 1, 0)
+    #self.init()
+
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+    self.textures = mainTextures = newTexture2(__resource("textures.png"))
+    self.gridProgram = gridProgram = d2textureProgram(mainTextures, (8, 64), self)
+    self.glyphs = glyphTextureGenerator(self)
+
+    gridProgram.add(160, 0.25, 5.5,  8, 1)
+    gridProgram.add(142, 0.25, 6.75, 8, 2)
+    gridProgram.add(45,  6.75, 6.75, 8, 3)
+
   def onSurfaceChanged(self, gl10, width, height):
     print("📽️ onSurfaceChanged", gl10, width, height)
+    if width == self.W and height == self.H: return
+
     glViewport(0, 0, width, height)
+    self.W, self.H, self.WH_ratio = width, height, width / height
+
+    glyphs = self.glyphs
+    glyphs.setHeight(100)
+    glyphs.add("itempqbdg meow!\n♥ itempqbdg meow!\n♥ РусскиЙ ТексТ")
+
+    self.ready = True
 
   def readBuffer(self, n, offset, size):
     print2("readBuffer")
@@ -378,11 +442,18 @@ void main() {
   def onDrawFrame(self, gl10):
     glClear(GL_COLOR_BUFFER_BIT)
 
+    self.gridProgram.draw(self.WH_ratio, self.eventN)
+    self.glyphs.draw(self.WH_ratio)
+
   def move(self, dx, dy): pass
   def event(self, up, down, misc): pass
-  def getTByPosition(self, x, y, up): return 0
+  def getTByPosition(self, x, y, up):
+    if not self.ready: return -1
+    return self.gridProgram.checkPosition(x / self.W, y / self.H, up)
   def click(self, x, y, click_td): pass
-  def restart(self): pass
+  def restart(self):
+    print2("~" * 53)
+    self.W = self.H = self.WH_ratio = -1
 
   reverse = {
     "cr": onSurfaceCreated,
