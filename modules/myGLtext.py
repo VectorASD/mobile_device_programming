@@ -207,7 +207,7 @@ def canvasGen(packed):
   """
 
   p.setAntiAlias(True)
-  p.setColor(0xffffddad)
+  p.setColor(0xffffffff) #0xffffddad)
   p.setStyle(FILL)
   for x, y, (WH, letter, (left, right, top, bottom)) in packed:
     #print("size:", letter, right-left, bottom-top, WH)
@@ -259,50 +259,76 @@ class GlyphProgram:
     self.program = _, attribs, uniforms = checkProgram(newProgram("""
 attribute vec2 vPosition;
 attribute vec2 vUV;
+attribute vec4 vColor;
 
 uniform float uAspect;
 
 varying vec2 vaUV;
+varying vec4 vaColor;
 
 void main() {
-  gl_Position = vec4(vPosition.x, vPosition.y * uAspect, 0, 1);
+  gl_Position = vec4(vPosition.x, vPosition.y * uAspect - (1. - uAspect), 0, 1);
   vaUV = vUV;
+  vaColor = vColor;
 }
 """, """
 precision mediump float;
 
 varying vec2 vaUV;
+varying vec4 vaColor;
 
 uniform sampler2D uTexture;
 
 void main() {
   vec4 color = texture2D(uTexture, vaUV);
-  gl_FragColor = color;
+  gl_FragColor = color * vaColor;
 }
-""", ("vPosition", "vUV"), ("uTexture", "uAspect")))
+""", ("vPosition", "vUV", "vColor"), ("uTexture", "uAspect")))
     vPosition = attribs["vPosition"]
     vUV       = attribs["vUV"]
+    vColor    = attribs["vColor"]
     def func():
-      glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 4 * 4, 0)
-      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 4 * 4, 2 * 4)
+      glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 8 * 4, 0)
+      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 8 * 4, 2 * 4)
+      glVertexAttribPointer(vColor,    4, GL_FLOAT, False, 8 * 4, 4 * 4)
     self.func = func
     self.uTexture = uniforms["uTexture"]
     self.uAspect = uniforms["uAspect"]
     self.models = []
     self.height = 24
+    self.color = (0, 0, 0, 1)
+    self.printer = True
 
   def setHeight(self, height):
     self.height = height
 
-  def create(self, text):
+  def setRGBA(self, r, g, b, a):
+    self.color = r / 255, g / 255, b / 255, a / 255
+  def setRGB(self, r, g, b):
+    self.color = r / 255, g / 255, b / 255, self.color[3]
+  def setAlpha(self, a):
+    r, g, b, _ = self.color
+    self.color = r, g, b, a / 255
+  def setColorA(self, rgba):
+    rgba, a = divmod(rgba, 256)
+    rgba, b = divmod(rgba, 256)
+    r, g = divmod(rgba, 256)
+    self.color = r / 255, g / 255, b / 255, a / 255
+  def setColor(self, rgb):
+    rgb, b = divmod(rgb, 256)
+    r, g = divmod(rgb, 256)
+    self.color = r / 255, g / 255, b / 255, self.color[3]
+
+  def create(self, startX, startY, text):
     mul = 2 / self.renderer.W
     mTop, mBottom, dict = self.dict
     # mHeight = mBottom - mTop
     mul *= self.height / -mTop
 
-    x, y = -0.75, mTop * mul
+    x, y = startX, startY + mTop * mul
     VBO, IBO = [], []
     step = 0
+    R, G, B, A = self.color
     for letter in text:
       if letter == " ":
         box = dict["a"] # исходим из того, что английские буквы не могут не быть в шрифте
@@ -312,7 +338,7 @@ void main() {
       if letter == "\n":
         box = dict["♥"] # эмодзи всегда самые высокие и обычно от шрифта не зависят
         uv_x, uv_y, w, h, (left, right, top, bottom) = box
-        x = -0.75
+        x = startX
         y -= (bottom - top) * mul
         continue
 
@@ -328,20 +354,28 @@ void main() {
       y1 = y - top * mul
       y2 = y - bottom * mul
       VBO.extend((
-        x, y1, uv_x, uv_y,
-        x, y2, uv_x, uv_y2,
-        x2, y1, uv_x2, uv_y,
-        x2, y2, uv_x2, uv_y2,
+        x, y1, uv_x, uv_y, R, G, B, A,
+        x, y2, uv_x, uv_y2, R, G, B, A,
+        x2, y1, uv_x2, uv_y, R, G, B, A,
+        x2, y2, uv_x2, uv_y2, R, G, B, A,
       ))
       IBO.extend((
         step, step + 1, step + 2, step + 1, step + 2, step + 3,
       ))
       x = x2
       step += 4
-    return Model(VBO, IBO, self)
+    return Model(VBO, IBO, self, self.printer)
 
-  def add(self, text):
-    self.models.append(self.create(text))
+  def replace(self, index, posX, posY, L, text):
+    L /= 2
+    L1 = L - 1
+    x, y = (posX - L) / L, (posY - L) / -L
+    self.models[index] = self.create(x, y, text)
+  def add(self, posX, posY, L, text):
+    index = len(self.models)
+    self.models.append(None)
+    self.replace(index, posX, posY, L, text)
+    return index
 
   def draw(self, aspect, customModels = None):
     self.aspect = aspect
@@ -363,7 +397,8 @@ void main() {
 
 def glyphTextureGenerator(renderer):
   T = time()
-  packed, dict = glyphRenderer(1024, 512, ("cursive", "normal", 64), "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ0123456789¹½⅓¼⅕⅙⅐⅛⅑⅒²⅔⅖³⅗¾⅜⁴⅘⁵⅚⅝⁶⁷⅞⁸⁹⁰ⁿ∅.,@#№$¢£₱¥₹€_&-—–·+±()<>[]{}/*★†‡\"„“”«»'‚‘’‹›:;!¡?¿‽~`|•♣♠♪♥♦√πΩΠμ÷×§¶∆£¢€¥^←↑↓→°′″=∞≠≈\\%‰℅©®™✓")
+  additional = "⚠️🔥💥✅🐾"
+  packed, dict = glyphRenderer(1024, 512, ("cursive", "normal", 64), "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ0123456789¹½⅓¼⅕⅙⅐⅛⅑⅒²⅔⅖³⅗¾⅜⁴⅘⁵⅚⅝⁶⁷⅞⁸⁹⁰ⁿ∅.,@#№$¢£₱¥₹€_&-—–·+±()<>[]{}/*★†‡\"„“”«»'‚‘’‹›:;!¡?¿‽~`|•♣♠♪♥♦√πΩΠμ÷×§¶∆£¢€¥^←↑↓→°′″=∞≠≈\\%‰℅©®™✓" + additional)
   T2 = time()
   data = canvasGen(packed)
   # with open("/sdcard/output.png", "wb") as file: file.write(data)

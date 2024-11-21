@@ -3,7 +3,7 @@ import myGL
 
 
 class Model:
-  def __init__(self, VBOdata, IBOdata = None, shaderProgram = None):
+  def __init__(self, VBOdata, IBOdata = None, shaderProgram = None, printer = True):
     if IBOdata is None and len(VBOdata) == 4:
       self.data = VBOdata
       self.matrix = None
@@ -27,7 +27,7 @@ class Model:
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, IBOdata.capacity() * 4, IBOdata.fb, GL_STATIC_DRAW)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
-    print2("✅ OK buffers:", VBO, IBO)
+    if printer: print2("✅ OK buffers:", VBO, IBO)
     self.data = VBO, IBO, IBOdata.capacity(), shaderProgram
     self.matrix = None
 
@@ -500,6 +500,10 @@ void main() {
     self.size        = W, H = size
     self.textureSize = tW, tH = texture2size[texture]
     self.tileSize    = (tW + W - 1) // W, (tH + H - 1) // H
+    self.printer = True
+    self.up = 0
+
+  def setUp(self, up): self.up = up
 
   def createModel(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
     W, H = self.size
@@ -517,11 +521,20 @@ void main() {
       pLx, pRy, Lx, Ry, t,
     ), (
       0, 1, 2, 0, 2, 3,
-    ), self)
-  def add(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
+    ), self, self.printer)
+  def replace(self, index, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
     model = self.createModel(id, posX, posY, L, t, invertX, invertY)
-    self.models.append(model)
-    self.modelPositions.append((posX / L, (posX + 1) / L, posY / L, (posY + 1) / L, t))
+    up = self.up
+    if type(up) in (int, float): upX = upY = up
+    else: upX, upY = up
+    self.models[index] = model
+    self.modelPositions[index] = ((posX - upX) / L, (posX + 1 + upX) / L, (posY - upY) / L, (posY + 1 + upY) / L, t)
+  def add(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
+    index = len(self.models)
+    self.models.append(None)
+    self.modelPositions.append(None)
+    self.replace(index, id, posX, posY, L, t, invertX, invertY)
+    return index
 
   def draw(self, aspect, eventN, customModels = None):
     self.aspect = aspect
@@ -540,13 +553,13 @@ void main() {
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_CULL_FACE)
 
-  def checkPosition(self, x, y, up):
+  def checkPosition(self, x, y):
     # x и y от 0 до 1
     aspect = self.aspect
     y = (y - (1 - aspect)) / aspect
     result = -1
     for x1, x2, y1, y2, t in self.modelPositions:
-      if x1 - up <= x and x <= x2 + up and y1 - up <= y and y <= y2 + up: result = t
+      if x1 <= x and x <= x2 and y1 <= y and y <= y2: result = t
     return result
 
 

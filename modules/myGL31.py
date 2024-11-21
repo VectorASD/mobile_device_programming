@@ -41,6 +41,7 @@ glGetIntegeri_v = GLES30._mw_glGetIntegeri_v(int, int, INTarr, int) # target, in
 
 
 
+"""
 from android.view.View import View
 from android.view.Gravity import Gravity
 from android.view.ViewGroup import ViewGroup
@@ -71,6 +72,7 @@ def keyboard(ctx):
     print(tableRow.cast(View))
     tableLayout._m_addView(tableRow)
   return tableLayout
+"""
 
 
 
@@ -146,7 +148,7 @@ void main() {
   atomicOr(output_data.elements[index >> 5], 1u << (index & 31u));
 }"""[1:]
   ab = {letter: i for i, letter in enumerate(ab)}
-  print(ab)
+  # print(ab)
 
   def checker(code, i):
     try: letter = checks[i]
@@ -219,8 +221,36 @@ void main() {
 
 
 
+def cpu_generator(ab, groups, seed):
+  letters = groups * 5
+  eax = len(ab)
+  repeat_limit = letters // eax + 1
+
+  repeats = [0] * eax
+  result = []
+  prev = -1
+
+  for i in range(letters):
+    while True:
+      seed = seed * 0x08088405 + 1 & 0xffffffff
+      letter = seed * eax >> 32
+      if repeats[letter] < repeat_limit: break
+    repeats[letter] += 1
+    while prev == letter:
+      seed = seed * 0x08088405 + 1 & 0xffffffff
+      letter = seed * eax >> 32
+    prev = letter
+    if i:
+      if i % 25 == 0: result.append("\n")
+      elif i % 5 == 0: result.append(" ")
+    result.append(ab[letter])
+
+  return "".join(result)
+
+
+
 class gpuRenderer:
-  def init(self):
+  def preinit(self):
     def shift(L, R):
       return (L + (1 << R - 1) - 1) >> R
 
@@ -230,10 +260,11 @@ class gpuRenderer:
     ssbo_size = ssbo_items << 2
     ssbo2_items = shift(ssbo_items, 8)
     ssbo2_size = ssbo2_items << 2
-    print("ssbo_size:", ssbo_size)
-    print("ssbo_items:", ssbo_items)
-    print("ssbo2_size:", ssbo2_size)
-    print("ssbo2_items:", ssbo2_items)
+    #print("ssbo_size:", ssbo_size)
+    #print("ssbo_items:", ssbo_items)
+    #print("ssbo2_size:", ssbo2_size)
+    #print("ssbo2_items:", ssbo2_items)
+    self.ssbo_sizes = ssbo_items, ssbo_size, ssbo2_items, ssbo2_size
 
     self.cleaner = checkProgram(newProgram31("""#version 310 es
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
@@ -255,34 +286,6 @@ void main() {
   uint seed = gl_GlobalInvocationID.x + gl_WorkGroupSize.x * gl_NumWorkGroups.x * gl_GlobalInvocationID.y;
   if (seed < %su) output_data.elements[seed] = 0u;
 }""" % ssbo2_items))
-
-    #code = gpu_code_generator("1234567890", 15, "*7*30" +"*"*20 + "*183*" +"*"*20 + "15***")
-    code = gpu_code_generator("1234567890", 5, "*7*3")
-    #code = gpu_code_generator("1234567890", 5, "**********")
-    #code = gpu_code_generator("1234567890", 5, "38439110")
-    print(code)
-    self.shader = checkProgram(newProgram31("""#version 310 es
-
-layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
-layout(std430) buffer;
-
-layout(binding = 0) buffer Output {
-  uint elements[];
-} output_data;
-/*layout(binding = 1) readonly buffer Input0 {
-  uint elements[];
-} input_data0;*/
-
-%s
-void mainNone() {
-  uint seed = gl_GlobalInvocationID.x + gl_WorkGroupSize.x * gl_NumWorkGroups.x * gl_GlobalInvocationID.y;
-  uint index = seed >> 5;
-
-  // input_data0.elements[seed] * input_data0.elements[seed];
-  if (seed == 0x5280000u-18u) return;
-
-  atomicOr(output_data.elements[index], 1u << (seed & 31u));
-}""" % code))
 
     self.counter = checkProgram(newProgram31("""#version 310 es
 
@@ -312,49 +315,93 @@ void main() {
     print("🌴 Limits:", arr[:])
     self.limits = arr[:]
 
-    print("default:", readByteOutput(self.readBuffer(0, ssbo_size - 0x100, 0x100))[:])
+  def init(self, pattern):
     T = time()
+    ssbo_items, ssbo_size, ssbo2_items, ssbo2_size = self.ssbo_sizes
+    result = []
+
+    #code = gpu_code_generator("1234567890", 15, "*7*30" +"*"*20 + "*183*" +"*"*20 + "15***")
+    #code = gpu_code_generator("1234567890", 5, "*7*3")
+    #code = gpu_code_generator("1234567890", 5, "**********")
+    #code = gpu_code_generator("1234567890", 5, "38439110")
+    ab = "елжасщтцдоригьфнйухкбпмызвшячэю" if self.mode == 2 else "1234567890"
+    code = gpu_code_generator(ab, self.groups, pattern)
+    #print(code)
+    shader = checkProgram(newProgram31("""#version 310 es
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout(std430) buffer;
+
+layout(binding = 0) buffer Output {
+  uint elements[];
+} output_data;
+/*layout(binding = 1) readonly buffer Input0 {
+  uint elements[];
+} input_data0;*/
+
+%s
+void mainNone() {
+  uint seed = gl_GlobalInvocationID.x + gl_WorkGroupSize.x * gl_NumWorkGroups.x * gl_GlobalInvocationID.y;
+  uint index = seed >> 5;
+
+  // input_data0.elements[seed] * input_data0.elements[seed];
+  if (seed == 0x5280000u-18u) return;
+
+  atomicOr(output_data.elements[index], 1u << (seed & 31u));
+}""" % code))
+    result.append("Time (generator): %s" % (time() - T))
+
+    # print("default:", readByteOutput(self.readBuffer(0, ssbo_size - 0x100, 0x100))[:])
+    # T = time()
     self.calculate(self.cleaner, ssbo_items)
     self.calculate(self.cleaner2, ssbo2_items)
-    td = time() - T
-    print("Time:", td)
-    print("default:", readByteOutput(self.readBuffer(0, ssbo_size - 0x100, 0x100))[:])
+    # result.append("Time (cleaners): %s" % (time() - T))
+    # print("default:", readByteOutput(self.readBuffer(0, ssbo_size - 0x100, 0x100))[:])
 
-    T = time()
-    self.calculate(self.shader, self.seeds)
-    td = time() - T
-    print("Time:", td)
+    #T = time()
+    self.calculate(shader, self.seeds)
+    glDeleteProgram(shader)
+    #result.append("Time (shader): %s" % (time() - T))
 
-    arr = readIntOutput(self.readBuffer(0, 0, ssbo_size))
-    print(arr[:64])
+    # arr = readIntOutput(self.readBuffer(0, 0, ssbo_size))
+    # print(arr[:64])
 
-    T = time()
+    #T = time()
     self.calculate(self.counter, ssbo_items)
-    td = time() - T
-    print("Time:", td)
+    #result.append("Time (counter): %s" % (time() - T))
 
-    arr2 = readIntOutput(self.readBuffer(1, 0, ssbo2_size))
+    T = time()
+    a = self.readBuffer(1, 0, ssbo2_size, True)
+    result.append("Time (read ssbo2): %s" % (time() - T))
+    arr2 = readIntOutput(a)
+
     Sum = sum(arr2)
-    print("Всего найдено радиограмм:", Sum)
+    result.append("Всего найдено радиограмм: %s" % Sum)
     offset = 0
     count = 0
+    result2 = None
     for finded in arr2:
       if finded:
+        arr = readIntOutput(self.readBuffer(0, offset * 4, 1024))
         for n in range(offset, offset + 256):
-          item = arr[n]
+          item = arr[n - offset]
           if item:
             for bit in range(32):
               #print(n << 5 | bit, item, item >> bit, item >> bit & 1, "✅" if item >> bit & 1 else "🐓")
               if item >> bit & 1:
-                print("✅", n << 5 | bit)
+                seed = n << 5 | bit
+                result.append("✅ %s" % seed)
+                if result2 is None:
+                  result2 = cpu_generator(ab, self.groups, seed), seed
                 count += 1
                 if count >= 16 and Sum > 32:
-                  print("... и ещё %d радиограмм" % (Sum - 16))
-                  return
+                  result.append("... и ещё %d радиограмм" % (Sum - 16))
+                  return "\n".join(result), result2
       offset += 256
     # self.Print(0, (self.seeds >> 3) - 256, 256)
     #arr = readIntOutput(self.readBuffer(0, 0, 0x100 * 4))
     #print("👍", ((arr[i] >> 16, arr[i] & 0xffff) for i in range(256)))
+    return "\n".join(result), result2
 
 
 
@@ -370,25 +417,23 @@ void main() {
     self.W = self.H = self.WH_ratio = -1
     self.eventN = 0
     self.ctx = activity._m_getApplicationContext().cast(Context)
-    
-    #kb = keyboard(self.ctx)
-    #print("KB:", kb)
+    self.letters = ["*"] * 250
+    self.selected = 0
+    self.mode = 0
+    self.groups = 30
 
   def onSurfaceCreated(self, gl10, config):
     print("📽️ onSurfaceCreated", gl10, config)
     glClearColor(0.9, 0.95, 1, 0)
-    #self.init()
+    self.preinit()
 
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
     self.textures = mainTextures = newTexture2(__resource("textures.png"))
     self.gridProgram = gridProgram = d2textureProgram(mainTextures, (8, 64), self)
-    self.glyphs = glyphTextureGenerator(self)
-
-    gridProgram.add(160, 0.25, 5.5,  8, 1)
-    gridProgram.add(142, 0.25, 6.75, 8, 2)
-    gridProgram.add(45,  6.75, 6.75, 8, 3)
+    self.glyphs = glyphs = glyphTextureGenerator(self)
+    gridProgram.printer = glyphs.printer = False
 
   def onSurfaceChanged(self, gl10, width, height):
     print("📽️ onSurfaceChanged", gl10, width, height)
@@ -396,38 +441,85 @@ void main() {
 
     glViewport(0, 0, width, height)
     self.W, self.H, self.WH_ratio = width, height, width / height
-
+    gridProgram = self.gridProgram
     glyphs = self.glyphs
-    glyphs.setHeight(100)
-    glyphs.add("itempqbdg meow!\n♥ itempqbdg meow!\n♥ РусскиЙ ТексТ")
+
+    items = []
+    items2 = []
+    #s = "абвгдежзийклмнопрстуфхцчшщыьэюя1234567890"
+    gridProgram.setUp((0, 0.25))
+    glyphs.setHeight(self.W / 31)
+    for i in range(250):
+      group, letter = divmod(i, 5)
+      line, group = divmod(group, 5)
+      column = 1 + group * 6 + letter
+      row = line * 1.5 - 27
+      items.append(gridProgram.add(70, column, row, 31, i))
+      items2.append(glyphs.add(column + 0.2, row - 0.1, 31, self.letters[i]))
+    self.items = items
+    self.items2 = items2
+    if self.selected >= 0: self.setCell(self.selected, 50)
+
+    gridProgram.setUp(0.25)
+    glyphs.setHeight(self.W / (31/2))
+    for digit in range(10):
+      column = 0.5 + digit * 1.5
+      row = -5.5
+      gridProgram.add(70, column, row, 31/2, 250 + digit)
+      glyphs.add(column + 0.2, row - 0.1, 31/2, str((digit + 1) % 10))
+
+    ab = "йцукенгшщзхфывапролджэячсмитьбю*"
+    for char in range(32):
+      row, column = divmod(char, 11)
+      column = (0.5 if row < 2 else 1.25) + column * (1.5 * (14 / 15.5) if row < 2 else 1.5)
+      if char == 31: column += 0.25
+      row = row * 1.5 - 4
+      gridProgram.add(70, column, row, 31/2, 260 + char)
+      glyphs.add(column + 0.2, row - 0.1, 31/2, ab[char])
+
+    gridProgram.add(70, 0.5, -15, 31/2, 292)
+    glyphs.add(0.5 + 0.2, -15 - 0.1, 31/2, "<")
+    gridProgram.add(70, 3, -15, 31/2, 293)
+    glyphs.add(3 + 0.2, -15 - 0.1, 31/2, ">")
+    self.groupsText = glyphs.add(1.5 + 0.2, -15 - 0.1, 31/2, str(self.groups))
+
+    glyphs.setHeight(self.W / 31 * 0.8)
+    glyphs.setColor(0xadddff)
+    self.output = glyphs.add(1, 1, 31, "itempqbdg meow!\n♥ itempqbdg meow!\n♥ РусскиЙ ТексТ")
+    gridProgram.setUp(0)
+    gridProgram.add(70, 0, 1 / 31, 1, -1)
 
     self.ready = True
+    self.recalc()
 
-  def readBuffer(self, n, offset, size):
-    print2("readBuffer")
+  def readBuffer(self, n, offset, size, dbg = False):
+    # print2("readBuffer")
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, self.outputBuffer[n])
-    checkGLError()
+    # checkGLError()
+    T = time()
     buffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, offset, size, GL_MAP_READ_BIT)
-    checkGLError()
+    # checkGLError()
+    T2 = time()
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)
-    checkGLError()
+    # checkGLError()
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
+    if dbg: print("👣", T2 - T)
     return buffer
 
   def calculateOld(self, shader, width, height):
     glUseProgram(shader)
     glDispatchCompute(width >> 4, height >> 4, 1)
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)
-    print("CALCULATED!")
+    # print("CALCULATED!")
 
   def calculate(self, shader, items):
     width = (round(items ** 0.5) + 15) // 16 * 16
     height = ((items + width - 1) // width + 15) // 16 * 16
-    print(hex(width), hex(height), "|", items, "->", width * height)
+    # print(hex(width), hex(height), "|", items, "->", width * height)
     glUseProgram(shader)
     glDispatchCompute(width >> 4, height >> 4, 1)
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)
-    print("CALCULATED!")
+    # print("CALCULATED!")
 
   def Print(self, n, offset, size):
     # buffer = self.readBuffer(n, offset * 4, size * 4)
@@ -445,14 +537,108 @@ void main() {
     self.gridProgram.draw(self.WH_ratio, self.eventN)
     self.glyphs.draw(self.WH_ratio)
 
+  def recalc(self):
+    pattern = "".join(self.letters)
+
+    for i in range(len(pattern) - 1, -1, -1):
+      letter = pattern[i]
+      if letter == "*": continue
+      mode = 1 if letter in "1234567890" else 2
+      pattern = pattern[:i+1]
+      break
+    else:
+      mode = 0
+      pattern = ""
+    self.mode = mode
+
+    result, result2 = self.init(pattern)
+    if result2:
+      radgr, seed = result2
+      S, ms = divmod(seed, 1000)
+      S, s = divmod(S, 60)
+      h, m = divmod(S, 60)
+      seed = "\nseed: %s (%02s:%02s:%02s.%03s)\n%s" % (seed, h, m, s, ms, radgr)
+      result += seed
+    self.setOutput(pattern + "\n" + result)
+
+  def setCell(self, id, tid):
+    if id < 0: return
+    index = self.items[id]
+    group, letter = divmod(id, 5)
+    line, group = divmod(group, 5)
+    column = 1 + group * 6 + letter
+    row = line * 1.5 - 27
+    self.gridProgram.setUp((0, 0.25))
+    self.gridProgram.replace(index, tid, column, row, 31, id)
+
+  def setLetter(self, id, text):
+    if id < 0: return
+    index = self.items2[id]
+    group, letter = divmod(id, 5)
+    line, group = divmod(group, 5)
+    column = 1 + group * 6 + letter
+    row = line * 1.5 - 27
+    glyphs = self.glyphs
+    glyphs.setHeight(self.W / 31)
+    glyphs.setColor(0)
+    glyphs.replace(index, column + 0.2, row - 0.1, 31, text)
+    self.letters[id] = text
+    self.recalc()
+
+  def setOutput(self, text):
+    index = self.output
+    glyphs = self.glyphs
+    glyphs.setHeight(self.W / 31 * 0.8)
+    glyphs.setColor(0x0000ad)
+    glyphs.replace(index, 1, 1, 31, text)
+
+  def setGroups(self, groups):
+    glyphs = self.glyphs
+    glyphs.setHeight(self.W / (31/2))
+    glyphs.setColor(0)
+    glyphs.replace(self.groupsText, 1.5 + 0.2, -15 - 0.1, 31/2, str(groups))
+    self.groups = groups
+    self.recalc()
+
   def move(self, dx, dy): pass
   def event(self, up, down, misc): pass
-  def getTByPosition(self, x, y, up):
+
+  def getTByPosition(self, x, y):
     if not self.ready: return -1
-    return self.gridProgram.checkPosition(x / self.W, y / self.H, up)
-  def click(self, x, y, click_td): pass
+    return self.gridProgram.checkPosition(x / self.W, y / self.H)
+
+  def click(self, x, y, click_td):
+    def func(id):
+      self.setCell(self.selected, 70)
+      self.setCell(id, 50)
+      # self.setLetter(id, "аб09"[randint(0, 3)])
+      self.selected = id
+    def func2(digit):
+      if self.mode == 2: return
+      self.setLetter(self.selected, str((digit + 1) % 10))
+      func((self.selected + 1) % 250)
+    def func3(char):
+      if self.mode == 1 and char != 31: return
+      ab = "йцукенгшщзхфывапролджэячсмитьбю*"
+      self.setLetter(self.selected, ab[char])
+      func((self.selected + 1) % 250)
+    def func4(add):
+      next = self.groups + (5 if add else -5)
+      if next in range(5, 51, 5): self.setGroups(next)
+
+    id = self.getTByPosition(x, y)
+    if id in range(250):
+      runOnGLThread(self.view, lambda: func(id))
+    elif id in range(250, 260):
+      runOnGLThread(self.view, lambda: func2(id - 250))
+    elif id in range(260, 292):
+      runOnGLThread(self.view, lambda: func3(id - 260))
+    elif id in range(292, 294):
+      runOnGLThread(self.view, lambda: func4(id - 292))
+
   def restart(self):
     print2("~" * 53)
+    self.ready = False
     self.W = self.H = self.WH_ratio = -1
 
   reverse = {

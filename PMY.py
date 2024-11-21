@@ -7,6 +7,7 @@ if True: # __name__ == "__main__":
 
 ###~~~### pmy
 
+import random
 import myGL
 import myGLclasses
 import myGL31
@@ -246,6 +247,7 @@ class myRenderer:
 
     # настройки шейдерных программ
 
+    gridProgram.setUp(0.25)
     gridProgram.add(160, 0.25, 5.5,  8, 1)
     gridProgram.add(142, 0.25, 6.75, 8, 2)
     gridProgram.add(45,  6.75, 6.75, 8, 3)
@@ -399,14 +401,14 @@ class myRenderer:
   def event(self, up, down, misc):
     self.eventN = up | down << 1 | misc << 2
 
-  def getTByPosition(self, x, y, up):
+  def getTByPosition(self, x, y):
     if not self.ready: return -1
-    return self.gridProgram.checkPosition(x / self.W, y / self.H, up)
+    return self.gridProgram.checkPosition(x / self.W, y / self.H)
 
   def click(self, x, y, click_td):
     if not self.ready: return
     if click_td > 0.5: return
-    t = self.getTByPosition(x, y, 0.01)
+    t = self.getTByPosition(x, y)
     if t == 3:
       self.skyboxN = N = (self.skyboxN + 1) % len(self.skyboxes)
       self.currentSkybox = self.skyboxes[N]
@@ -414,6 +416,7 @@ class myRenderer:
 
   def restart(self):
     print2("~" * 53)
+    self.ready = False
     self.W = self.H = self.WH_ratio = -1
     self.FBO = None
     SkyBox.restart()
@@ -498,7 +501,7 @@ class activityHandler:
     T = time()
     if action in ACTION_DOWN:
       x, y, id = getX(actionN), getY(actionN), getPointerId(actionN)
-      t = renderer.getTByPosition(x, y, 0.01)
+      t = renderer.getTByPosition(x, y)
       if t > 0:
         prevXY[id] = None
         if t == 1: self.eventA.add(id)

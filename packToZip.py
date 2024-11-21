@@ -18,6 +18,7 @@ paths = (
   ("modules/rbxmLoader.py", None),
   ("modules/myGL31.py", None),
   ("modules/myGLtext.py", None),
+  ("modules/random.py", None),
   ("resources/textures.png", None),
   ("resources/avatar.rbxm", None),
   ("resources/skybox_labeled.png", None),
