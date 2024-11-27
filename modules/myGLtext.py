@@ -329,6 +329,9 @@ void main() {
     VBO, IBO = [], []
     step = 0
     R, G, B, A = self.color
+    emoji = emojiBase
+    VBOextend = VBO.extend
+    IBOextend = IBO.extend
     for letter in text:
       if letter == " ":
         box = dict["a"] # исходим из того, что английские буквы не могут не быть в шрифте
@@ -353,13 +356,21 @@ void main() {
       x2 = x + (right - left) * mul
       y1 = y - top * mul
       y2 = y - bottom * mul
-      VBO.extend((
-        x, y1, uv_x, uv_y, R, G, B, A,
-        x, y2, uv_x, uv_y2, R, G, B, A,
-        x2, y1, uv_x2, uv_y, R, G, B, A,
-        x2, y2, uv_x2, uv_y2, R, G, B, A,
-      ))
-      IBO.extend((
+      if ord(letter) in emoji:
+        VBOextend((
+          x, y1, uv_x, uv_y, 1, 1, 1, A,
+          x, y2, uv_x, uv_y2, 1, 1, 1, A,
+          x2, y1, uv_x2, uv_y, 1, 1, 1, A,
+          x2, y2, uv_x2, uv_y2, 1, 1, 1, A,
+        ))
+      else:
+        VBOextend((
+          x, y1, uv_x, uv_y, R, G, B, A,
+          x, y2, uv_x, uv_y2, R, G, B, A,
+          x2, y1, uv_x2, uv_y, R, G, B, A,
+          x2, y2, uv_x2, uv_y2, R, G, B, A,
+        ))
+      IBOextend((
         step, step + 1, step + 2, step + 1, step + 2, step + 3,
       ))
       x = x2
@@ -392,6 +403,20 @@ void main() {
 
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_CULL_FACE)
+
+
+
+def getEmoji():
+  base = set()
+  add = base.add
+  for line in __resource("emoji2.txt").split(b"\n"):
+    if b"-" in line:
+      a, b = line.split(b"-")
+      for i in range(int(a, 16), int(b, 16)): add(i)
+    else: add(int(line, 16))
+  # print(len(base)) # 3668 it's ok!
+  return base
+emojiBase = getEmoji()
 
 
 

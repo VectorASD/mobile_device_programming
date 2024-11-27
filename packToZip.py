@@ -24,8 +24,11 @@ paths = (
   ("resources/skybox_labeled.png", None),
   ("resources/skybox_space.webp", None),
   ("resources/SolarSystem.rbxm", None),
+  ("resources/emoji2.txt", None),
 
   ("EulerRotators.py", None),
+  ("resources/emoji.txt", None),
+  ("emoji.py", None),
 )
 
 zip_filename = "PMY_name.zip"

@@ -588,7 +588,7 @@ void mainNone() {
   def setOutput(self, text):
     index = self.output
     glyphs = self.glyphs
-    glyphs.setHeight(self.W / 31 * 0.8)
+    glyphs.setHeight(self.W / 31 * 1.5)
     glyphs.setColor(0x0000ad)
     glyphs.replace(index, 1, 1, 31, text)
 
