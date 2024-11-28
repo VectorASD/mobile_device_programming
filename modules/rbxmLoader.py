@@ -73,6 +73,10 @@ def checkString(prop):
   type, value = prop
   if type != 0x01: exit("Это не String: %s" % prop)
   return value
+def checkFloat32(prop):
+  type, value = prop
+  if type != 0x04: exit("Это не Float32: %s" % prop)
+  return value
 def checkColor3(prop):
   type, value = prop
   if type != 0x0c: exit("Это не Color3: %s" % prop)
@@ -120,6 +124,7 @@ def modelHandler(root):
     #print("...", checkVector3(props["size"]), checkVector3(props["InitialSize"]))
     x, y, z = checkVector3(props["size"])
     ix, iy, iz = checkVector3(props["InitialSize"])
+    info = {"size": (x / ix, y / iy, z / iz), "node": node}
     scaleMat = (x / ix, 0, 0, 0, 0, y / iy, 0, 0, 0, 0, z / iz, 0, 0, 0, 0, 1)._a_float
     multiplyMM(pos, 0, pos, 0, scaleMat, 0)
     # multiplyMM(pos, 0, scaleMat, 0, pos, 0) не просёк разницы. Возможно, порядок действительно не играет никакой роли
@@ -147,13 +152,18 @@ def modelHandler(root):
       normalMap = cdnLoader(checkString(SA_props["NormalMap"]))
       roughnessMap = cdnLoader(checkString(SA_props["RoughnessMap"]))
       PBR_textures = color, colorMap, (metalnessMap, normalMap, roughnessMap)
-      result = node, pos, VBOdata, IBOdata, PBR_textures, isBody
+      result = node, pos, VBOdata, IBOdata, PBR_textures, isBody, info
     else:
       r, g, b = checkColor3uint8(props["Color3uint8"])
+      a = checkFloat32(props["Transparency"])
       texture = cdnLoader(checkString(props["TextureID"]))
-      texture = ((texture, (1, 1, 1, 1)),) if texture else ()
-      tex = (r / 255, g / 255, b / 255, 1), texture
-      result = node, pos, VBOdata, IBOdata, tex, isBody
+      #texture = ((texture, (1, 1, 1, 1)),) if texture else ()
+      #tex = (r / 255, g / 255, b / 255, 0), texture
+      if texture:
+        texture = ((texture, (1, 1, 1, 1 - a)),)
+        tex = (0, 0, 0, 0), texture
+      else: tex = (r / 255, g / 255, b / 255, 1 - a), ()
+      result = node, pos, VBOdata, IBOdata, tex, isBody, info
 
     return SA, result
 
@@ -193,13 +203,15 @@ def modelHandler(root):
         pos = CFrame2mat(getCFrame(props))
         multiplyMM(pos, 0, root_pos, 0, pos, 0)
 
-      isSA, mesh = meshPart(node, pos, accessory, is_character_part)
-      if is_character_part:
-        if isSA: characterPBR_models.append(mesh)
-        else: characterModels.append(mesh)
-      else:
-        if isSA: PBR_models.append(mesh)
-        else: models.append(mesh)
+      data = meshPart(node, pos, accessory, is_character_part)
+      if data is not None:
+        isSA, mesh = data
+        if is_character_part:
+          if isSA: characterPBR_models.append(mesh)
+          else: characterModels.append(mesh)
+        else:
+          if isSA: PBR_models.append(mesh)
+          else: models.append(mesh)
 
     elif className == "BodyColors":
       bodyColors = {

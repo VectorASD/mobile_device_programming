@@ -176,6 +176,7 @@ class myRenderer:
     self.camX, self.camY, self.camZ = 0, 0, -3.5
     self.eventN = 0
     self.time, self.td = time(), 0
+    self.moveTd = None
 
     self.W = self.H = self.WH_ratio = -1
     self.FBO = None
@@ -245,7 +246,7 @@ class myRenderer:
     self.pbr = PBR(self)
     self.noPBR = NoPBR(self)
 
-    # настройки шейдерных программ
+    # настройка шейдерных программ
 
     gridProgram.setUp(0.25)
     gridProgram.add(160, 0.25, 5.5,  8, 1)
@@ -267,11 +268,44 @@ class myRenderer:
       TexturedModel(TranslateModel(sphere, (0, 3, 0)), fboTex),
     )
 
-    if True:
-      union, PBR_model, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", self)
+    if False:
+      union, PBR_model, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", None, self)
       SolarSystem = WaitingModel()
     else:
-      SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", self)
+      def cb(models):
+        def hypot(size):
+          x, y, z = size
+          return x ** 2 + y ** 2 + z ** 2
+        unionM, PBR_unionM, charModelM = models
+        #     unionM.type = UnionModel
+        # PBR_unionM.type = UnionModel
+        #     unionM.models[i].type = MatrixModel
+        # PBR_unionM.models[i].type = MatrixModel
+        # charModelM.type = None | CharacterModel
+        models = sorted(unionM.models, key = lambda model: hypot(model.info["size"]))
+        groups = {}
+        order = []
+        for model in models:
+          key = model.info["node"]["_parent"]
+          print2(key["_name"])
+          if key in groups: groups[key].append(model)
+          else:
+            groups[key] = [model]
+            order.append(key)
+        res = []
+        X = 0
+        for node in order:
+          group = groups[node]
+          print("🐾🐾🐕", len(group), node["_name"])
+          size = group[-1].info["size"][0]
+          if X: X += size
+          for model in group:
+            print(model.info["size"])
+            res.append(TranslateModel(model, (X, -10, 0)))
+          X += size
+        unionM = UnionModel(res)
+        return unionM, PBR_unionM, charModelM
+      SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", cb, self)
       union = PBR_model = character = WaitingModel()
     hierarchy(SolarSystem)
 
@@ -329,13 +363,20 @@ class myRenderer:
   def eventHandler(self):
     td, event = self.td, self.eventN
     if event in (1, 2):
+      if self.moveTd is None: self.moveTd = 0
+      else: self.moveTd += td
+      moveTd = self.moveTd
+
       if event == 2: td = -td
       x, y, z = self.forward
       td *= 5
+      if moveTd > 1: td *= 2 ** (moveTd - 1)
+
       self.camX += x * td
       self.camY += y * td
       self.camZ += z * td
       self.calcViewMatrix()
+    else: self.moveTd = None
 
   def drawScene(self):
     # glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -345,12 +386,10 @@ class myRenderer:
     glEnable(GL_DEPTH_TEST)
 
     program = self.program
-    enableProgram(program.program)
     #checkGLError() TODO
     #glUniform1i(program[2]["uTexture"], 0)
     #checkGLError()
 
-    for model in self.models: model.draw()
     self.rbxModel.draw()
 
     self.pbr.draw(self.rbxPBRmodel)
@@ -360,10 +399,13 @@ class myRenderer:
       enableProgram(program.program)
       character.draw()
 
-    self.SolarSystem.draw()
-
     skybox = self.currentSkybox
     if skybox is not None: skybox.draw()
+
+    enableProgram(program.program)
+    for model in self.models: model.draw()
+
+    self.SolarSystem.draw()
 
     self.gridProgram.draw(self.WH_ratio, self.eventN)
 
@@ -458,8 +500,8 @@ class activityHandler:
     activity._m_getWindow()._m_setFlags(FLAG_FULLSCREEN, FLAG_FULLSCREEN) # Remove notification bar
 
     view = GLSurfaceView(ctx)
-    #renderer = myRenderer(activity, view)
-    renderer = gpuRenderer(activity, view)
+    renderer = myRenderer(activity, view)
+    # renderer = gpuRenderer(activity, view)
     renderer2 = rm.renderer(renderer)
     print("V:", view)
     print("R:", renderer2)

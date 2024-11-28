@@ -82,7 +82,7 @@ class MyCanvas:
 class MyBitmap:
   creator = Bitmap._mw_createBitmap(int, int, BitmapConfig)
   def __init__(self, sx, sy, t):
-    self.bmp = bmp = creator(sx.int, sy.int, t)
+    self.bmp = bmp = MyBitmap.creator(sx.int, sy.int, t)
     self.getConfig = bmp._mw_getConfig()
     self.recycle = bmp._mw_recycle()
     self.compress = bmp._mw_compress(CompressFormat, int, OutputStream) # format, quality, stream

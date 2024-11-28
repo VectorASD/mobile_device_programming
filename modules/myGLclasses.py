@@ -3,6 +3,7 @@ import myGL
 
 
 class Model:
+  type = "Model"
   def __init__(self, VBOdata, IBOdata = None, shaderProgram = None, printer = True):
     if IBOdata is None and len(VBOdata) == 4:
       self.data = VBOdata
@@ -92,6 +93,7 @@ def buildModel(faces):
 
 
 class TranslateModel:
+  type = "TranslateModel"
   def __init__(self, model, translate):
     self.model = model
     self.translate = translate
@@ -110,6 +112,7 @@ class TranslateModel:
 
 
 class ScaleModel:
+  type = "ScaleModel"
   def __init__(self, model, scale):
     self.model = model
     self.scale = scale
@@ -128,6 +131,7 @@ class ScaleModel:
 
 
 class RotateModel:
+  type = "RotateModel"
   def __init__(self, model, YPR):
     self.model = model
     self.YPR = YPR
@@ -158,9 +162,11 @@ class RotateModel:
 
 
 class MatrixModel:
-  def __init__(self, model, matrix):
+  type = "MatrixModel"
+  def __init__(self, model, matrix, info):
     self.model = model
     self.matrix = matrix
+    self.info = info
     self.draw = model.draw
     self.delete = model.delete
 
@@ -175,6 +181,7 @@ class MatrixModel:
 
 
 class UnionModel:
+  type = "UnionModel"
   def __init__(self, models):
     self.models = models
 
@@ -196,6 +203,7 @@ class UnionModel:
 
 
 class TexturedModel:
+  type = "TexturedModel"
   def __init__(self, model, textureID):
     self.model = model
     self.textureID = textureID
@@ -214,6 +222,7 @@ class TexturedModel:
 
 
 class NoCullFaceModel:
+  type = "NoCullFaceModel"
   def __init__(self, model):
     self.model = model
     self.delete = model.delete
@@ -232,6 +241,7 @@ class NoCullFaceModel:
 dbgTextures = 0, 0
 
 class CharacterModel:
+  type = "CharacterModel"
   def __init__(self, character, renderer):
     global dbgTextures
 
@@ -247,7 +257,7 @@ class CharacterModel:
     self.models = models2 = []
     self.PBR_models = PBR_models2 = []
 
-    for node, pos, VBOdata, IBOdata, tex, isBody in models:
+    for node, pos, VBOdata, IBOdata, tex, isBody, info in models:
       #if isBody: texture = bodyTexture
       #else: # tex всегда есть
       color, texArr = tex
@@ -256,26 +266,28 @@ class CharacterModel:
       print("🤗 SIZE%s:" % (" (body)" if isBody else ""), size, color, texArr)
       texture = await(VIEW, lambda: textureChain.use(size, color, texArr))
       if texArr: dbgTextures = texArr[0][0], texture
+      for tex, color in texArr: removeTexture(tex)
 
       model = await(VIEW, lambda: Model(VBOdata, IBOdata, program))
       if texture: model = TexturedModel(model, texture)
       # print("💥🔥", pos[:])
-      model = MatrixModel(model, pos)
+      model = MatrixModel(model, pos, info)
       models2.append(model if alternativeMode else (node["_id"], model))
 
-    for node, pos, VBOdata, IBOdata, PBR_textures, isBody in PBR_models:
+    for node, pos, VBOdata, IBOdata, PBR_textures, isBody, info in PBR_models:
       (r, g, b), colorMap, otherTex = PBR_textures
       if colorMap is None:
         colorMap = await(VIEW, lambda: textureChain.use((1, 1), (r, g, b, 1), ()))
       else:
-        colorMap = await(VIEW, lambda: newTexture2(colorMap))
+        colorMap2 = await(VIEW, lambda: newTexture2(colorMap))
         size = texture2size[colorMap]
-        colorMap = await(VIEW, lambda: textureChain.use(size, (0, 0, 0, 1), ((colorMap, (r, g, b, 1)),)))
+        colorMap = await(VIEW, lambda: textureChain.use(size, (0, 0, 0, 1), ((colorMap2, (r, g, b, 1)),)))
+        removeTexture(colorMap2)
       metalnessMap, normalMap, roughnessMap = (None if tex is None else await(VIEW, lambda: newTexture2(tex)) for tex in otherTex)
 
       model = await(VIEW, lambda: Model(VBOdata, IBOdata, PBR))
       model = PBR_Model(model, colorMap, metalnessMap, normalMap, roughnessMap)
-      model = MatrixModel(model, pos)
+      model = MatrixModel(model, pos, info)
       PBR_models2.append(model if alternativeMode else (node["_id"], model))
 
     if alternativeMode: return
@@ -344,6 +356,7 @@ class CharacterModel:
 
 
 class WaitingModel:
+  type = "WaitingModel"
   def __init__(self):
     self.saved_mat = None
     self.model = None
@@ -762,11 +775,14 @@ void main() {
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo)
     glViewport(0, 0, W, H)
+    glScissor(0, 0, W, H)
     r, g, b, a = baseColor
     glClearColor(r, g, b, a)
+    glEnable(GL_SCISSOR_TEST)
     glClear(GL_COLOR_BUFFER_BIT)
+    glDisable(GL_SCISSOR_TEST)
     glDisable(GL_CULL_FACE)
-    #glDisable(GL_DEPTH_TEST)
+    glDisable(GL_DEPTH_TEST)
 
     enableProgram(self.program)
     glUniform1i(self.uTexture, 0)
@@ -781,7 +797,7 @@ void main() {
     x, y, w, h = oldViewportParams
     glViewport(x, y, w, h)
     glEnable(GL_CULL_FACE)
-    #glEnable(GL_DEPTH_TEST)
+    glEnable(GL_DEPTH_TEST)
 
     return texture
 
@@ -791,7 +807,11 @@ void main() {
     glUniform4f(self.uTextureColor, 1, 1, 1, 1)
 
     glBindTexture(GL_TEXTURE_2D, self.renderer.FBO[1])
+    glDisable(GL_CULL_FACE)
+    glDisable(GL_DEPTH_TEST)
     self.model.draw()
+    glEnable(GL_CULL_FACE)
+    glEnable(GL_DEPTH_TEST)
 
 
 

@@ -94,9 +94,11 @@ PI180 = PI / 180
 
 glClearColor = GLES20._mw_glClearColor(float, float, float, float)
 glClear = GLES20._mw_glClear(int)
-glViewport = GLES20._mw_glViewport(int, int, int, int)
+glViewport = GLES20._mw_glViewport(int, int, int, int) # x, y, width, height
+glScissor = GLES20._mw_glScissor(int, int, int, int) # x, y, width, height
 glGetIntegerv = GLES20._mw_glGetIntegerv(int, INTarr, int) # pname, params, offset
 GL_VIEWPORT = GLES20._f_GL_VIEWPORT
+GL_SCISSOR_BOX = GLES20._f_GL_SCISSOR_BOX
 
 glCreateShader = GLES20._mw_glCreateShader(int)
 glShaderSource = GLES20._mw_glShaderSource(int, str)
@@ -149,6 +151,7 @@ glEnable = GLES20._mw_glEnable(int) # cap
 glDisable = GLES20._mw_glDisable(int) # cap
 GL_BLEND = GLES20._f_GL_BLEND
 GL_DEPTH_TEST = GLES20._f_GL_DEPTH_TEST
+GL_SCISSOR_TEST = GLES20._f_GL_SCISSOR_TEST
 GL_CULL_FACE = GLES20._f_GL_CULL_FACE
 
 glBlendFunc = GLES20._mw_glBlendFunc(int, int) # src factor, dst factor
@@ -394,6 +397,13 @@ def newTexture2(data):
   bitmap = decodeByteArray(data, 0, len(data), bitmapFactoryOptions)
   return _newTexture(bitmap, GL_LINEAR)
 
+def removeTexture(textureId):
+  print2("♻️ DEL texture:", textureId)
+  ids = INT.new_array(1)
+  ids[0] = textureId
+  glDeleteTextures(1, ids, 0)
+  texture2size.pop(textureId)
+
 
 
 GLES20_fields = GLES20.fields()
@@ -427,7 +437,7 @@ def newFrameBuffer(width, height, depthTest = True, oldFBO = None, filter = GL_N
   glBindFramebuffer(GL_FRAMEBUFFER, fbo)
 
   glBindTexture(GL_TEXTURE_2D, textureId)
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, None)
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter)
