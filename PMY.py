@@ -200,7 +200,10 @@ class myRenderer:
         arr[pos] = fd
         self.frame_pos = (pos + 1) % 10
       self.fpsS = S = sum(arr) * 10 // len(arr)
-      print(S)
+      glyphs = self.glyphs
+      glyphs.setHeight(self.W / 16)
+      glyphs.setColor(0xadddff)
+      glyphs.replace(self.fpsText, 0, self.W - self.H, self.W, "fps: %s" % S)
     return self.fpsS
 
   def onSurfaceCreated(self, gl10, config):
@@ -245,6 +248,8 @@ class myRenderer:
     self.textureChain = TextureChain(self)
     self.pbr = PBR(self)
     self.noPBR = NoPBR(self)
+    self.glyphs = glyphs = glyphTextureGenerator(self)
+    glyphs.printer = False
 
     # настройка шейдерных программ
 
@@ -255,6 +260,10 @@ class myRenderer:
 
     self.skyboxN       = 2
     self.currentSkybox = self.skyboxes[self.skyboxN]
+
+    glyphs.setHeight(self.W / 16)
+    glyphs.setColor(0xadddff)
+    self.fpsText = glyphs.add(0, self.W - self.H, self.W, "fps: ?")
 
     # загрузка моделей
 
@@ -287,7 +296,6 @@ class myRenderer:
         order = []
         for model in models:
           key = model.info["node"]["_parent"]
-          print2(key["_name"])
           if key in groups: groups[key].append(model)
           else:
             groups[key] = [model]
@@ -408,6 +416,7 @@ class myRenderer:
     self.SolarSystem.draw()
 
     self.gridProgram.draw(self.WH_ratio, self.eventN)
+    self.glyphs.draw(self.WH_ratio)
 
   def onDrawFrame(self, gl10):
     self.frames += 1
@@ -416,6 +425,7 @@ class myRenderer:
     self.time = T
     #print("📽️ onDraw", gl)
 
+    self.fps()
     self.eventHandler()
     if self.updMVP: self.calcMVPmatrix()
 
@@ -432,7 +442,6 @@ class myRenderer:
 
     self.textureChain.postprocessing()
     #print("🫢", glGetError())
-    #self.fps()
 
   def move(self, dx, dy):
     if not self.ready: return
