@@ -253,7 +253,7 @@ class CharacterModel:
     program = renderer.noPBR # renderer.program
     textureChain = renderer.textureChain
     PBR = renderer.pbr
-    #bodyTexture = await(VIEW, lambda: textureChain.use((1, 1), (1, 0.95, 0.9, 1), ()))
+    #bodyTexture = await(VIEW, lambda: textureChain.use((1, 1), (1, 0.95, 0.9, 1)))
     self.models = models2 = []
     self.PBR_models = PBR_models2 = []
 
@@ -261,15 +261,25 @@ class CharacterModel:
       #if isBody: texture = bodyTexture
       #else: # tex всегда есть
       color, texArr = tex
-      texArr = ((await(VIEW, lambda: newTexture2(tex)), color) for tex, color in texArr)
-      size = texture2size[texArr[0][0]] if texArr else (1, 1)
-      print("🤗 SIZE%s:" % (" (body)" if isBody else ""), size, color, texArr)
-      texture = await(VIEW, lambda: textureChain.use(size, color, texArr))
-      if texArr: dbgTextures = texArr[0][0], texture
-      for tex, color in texArr: removeTexture(tex)
+      if not texArr and "decal" in info:
+        texture, body, color2 = info["decal"]
+        textureTmp = await(VIEW, lambda: newTexture2(texture))
+        size = texture2size[textureTmp]
+        texture = await(VIEW, lambda: textureChain.use(size, color, ((textureTmp, color2),), False))
+        print(";'-}", color, color2)
+        dbgTextures = textureTmp, texture
+        useDecal = True
+      else:
+        texArr = ((await(VIEW, lambda: newTexture2(tex)), color) for tex, color in texArr)
+        size = texture2size[texArr[0][0]] if texArr else (1, 1)
+        # print("🤗 SIZE%s:" % (" (body)" if isBody else ""), size, color, texArr)
+        texture = await(VIEW, lambda: textureChain.use(size, color, texArr, True))
+        #if texArr: dbgTextures = texArr[0][0], texture
+        useDecal = False
 
       model = await(VIEW, lambda: Model(VBOdata, IBOdata, program))
       if texture: model = TexturedModel(model, texture)
+      if useDecal: model = NoCullFaceModel(model)
       # print("💥🔥", pos[:])
       model = MatrixModel(model, pos, info)
       models2.append(model if alternativeMode else (node["_id"], model))
@@ -277,12 +287,11 @@ class CharacterModel:
     for node, pos, VBOdata, IBOdata, PBR_textures, isBody, info in PBR_models:
       (r, g, b), colorMap, otherTex = PBR_textures
       if colorMap is None:
-        colorMap = await(VIEW, lambda: textureChain.use((1, 1), (r, g, b, 1), ()))
+        colorMap = await(VIEW, lambda: textureChain.use((1, 1), (r, g, b, 1)))
       else:
         colorMap2 = await(VIEW, lambda: newTexture2(colorMap))
         size = texture2size[colorMap]
-        colorMap = await(VIEW, lambda: textureChain.use(size, (0, 0, 0, 1), ((colorMap2, (r, g, b, 1)),)))
-        removeTexture(colorMap2)
+        colorMap = await(VIEW, lambda: textureChain.use(size, (0, 0, 0, 1), ((colorMap2, (r, g, b, 1)),), True))
       metalnessMap, normalMap, roughnessMap = (None if tex is None else await(VIEW, lambda: newTexture2(tex)) for tex in otherTex)
 
       model = await(VIEW, lambda: Model(VBOdata, IBOdata, PBR))
@@ -363,7 +372,7 @@ class WaitingModel:
     self.draw = lambda: None
     self.needDelete = False
   def setModel(self, model):
-    print("SET MODEL:", model)
+    # print("SET MODEL:", model)
     self.model = model
     self.recalc2()
 
@@ -375,7 +384,7 @@ class WaitingModel:
     mat = self.saved_mat
     model = self.model
     if mat is None or model is None: return
-    print("GET MODEL:", model)
+    # print("GET MODEL:", model)
     model.recalc(mat)
     self.delete = model.delete
     if self.needDelete: model.delete()
@@ -744,7 +753,9 @@ uniform sampler2D uTexture;
 uniform vec4 uTextureColor;
 
 void main() {
-    gl_FragColor = texture2D(uTexture, vaUV) * uTextureColor;
+  vec4 color = texture2D(uTexture, vaUV) * uTextureColor;
+  color.a = pow(color.a, 1. / 5.5); // усиленная гамма-коррекция альфы (5.5 вместо 2.2)
+  gl_FragColor = color;
 }
 """, ('vPosition', 'vUV'), ('uTexture', 'uTextureColor')))
     vPosition = attribs["vPosition"]
@@ -765,7 +776,7 @@ void main() {
       1, 1, 1, 1,
     ), (0, 1, 2, 1, 2, 3), self)
 
-  def use(self, size, baseColor, textures = ()):
+  def use(self, size, baseColor, textures = (), removeSources = False):
     W, H = size
     fbo, texture, _ = newFrameBuffer(W, H, False, self.FBO, GL_LINEAR)
     self.FBO = fbo
@@ -786,12 +797,14 @@ void main() {
 
     enableProgram(self.program)
     glUniform1i(self.uTexture, 0)
+    #glUniform1i(self.uUseGamma, int(gamma))
     draw = self.model.draw
     for texture2, textureColor in textures:
       r, g, b, a = textureColor
       glUniform4f(self.uTextureColor, r, g, b, a)
       glBindTexture(GL_TEXTURE_2D, texture2)
       draw()
+      if removeSources: removeTexture(texture2)
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     x, y, w, h = oldViewportParams

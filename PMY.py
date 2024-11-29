@@ -176,7 +176,8 @@ class myRenderer:
     self.camX, self.camY, self.camZ = 0, 0, -3.5
     self.eventN = 0
     self.time, self.td = time(), 0
-    self.moveTd = None
+    self.moveTd = 0
+    self.moveTd2 = 0
 
     self.W = self.H = self.WH_ratio = -1
     self.FBO = None
@@ -271,48 +272,49 @@ class myRenderer:
     fboTex = lambda: self.FBO[1]
     self.models = (
       NoCullFaceModel(triangles),
-      TexturedModel(ScaleModel(cube, (0.5, 1, 0.5)), fboTex),
-      TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (-2, 0, 0)), lambda: dbgTextures[0]),
-      TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (-4.5, 0, 0)), lambda: dbgTextures[1]),
+      TexturedModel(TranslateModel(ScaleModel(cube, (0.5, 1, 0.5)), (2.5, 0, 0)), fboTex),
+      TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (0.5, 0, 0)), lambda: dbgTextures[0]),
+      TexturedModel(TranslateModel(ScaleModel(cube.clone(), (1, 1, 0.5)), (-2, 0, 0)), lambda: dbgTextures[1]),
       TexturedModel(TranslateModel(sphere, (0, 3, 0)), fboTex),
     )
+
+    def cb(models):
+      def hypot(size):
+        x, y, z = size
+        return x ** 2 + y ** 2 + z ** 2
+      unionM, PBR_unionM, charModelM = models
+      #     unionM.type = UnionModel
+      # PBR_unionM.type = UnionModel
+      #     unionM.models[i].type = MatrixModel
+      # PBR_unionM.models[i].type = MatrixModel
+      # charModelM.type = None | CharacterModel
+      models = sorted(unionM.models, key = lambda model: hypot(model.info["size"]))
+      groups = {}
+      order = []
+      for model in models:
+        key = model.info["node"]["_parent"]
+        if key in groups: groups[key].append(model)
+        else:
+          groups[key] = [model]
+          order.append(key)
+      res = []
+      halos = []
+      X = 0
+      for node in order:
+        group = groups[node]
+        print("🐾🐾🐕", len(group), node["_name"])
+        size = group[-1].info["size"][0]
+        if X: X += size
+        for model in group:
+          (halos if "decal" in model.info else res).append(TranslateModel(model, (X, -10, 0)))
+        X += size
+      unionM = UnionModel(res + halos)
+      return unionM, PBR_unionM, charModelM
 
     if False:
       union, PBR_model, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", None, self)
       SolarSystem = WaitingModel()
     else:
-      def cb(models):
-        def hypot(size):
-          x, y, z = size
-          return x ** 2 + y ** 2 + z ** 2
-        unionM, PBR_unionM, charModelM = models
-        #     unionM.type = UnionModel
-        # PBR_unionM.type = UnionModel
-        #     unionM.models[i].type = MatrixModel
-        # PBR_unionM.models[i].type = MatrixModel
-        # charModelM.type = None | CharacterModel
-        models = sorted(unionM.models, key = lambda model: hypot(model.info["size"]))
-        groups = {}
-        order = []
-        for model in models:
-          key = model.info["node"]["_parent"]
-          if key in groups: groups[key].append(model)
-          else:
-            groups[key] = [model]
-            order.append(key)
-        res = []
-        X = 0
-        for node in order:
-          group = groups[node]
-          print("🐾🐾🐕", len(group), node["_name"])
-          size = group[-1].info["size"][0]
-          if X: X += size
-          for model in group:
-            print(model.info["size"])
-            res.append(TranslateModel(model, (X, -10, 0)))
-          X += size
-        unionM = UnionModel(res)
-        return unionM, PBR_unionM, charModelM
       SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", cb, self)
       union = PBR_model = character = WaitingModel()
     hierarchy(SolarSystem)
@@ -371,20 +373,22 @@ class myRenderer:
   def eventHandler(self):
     td, event = self.td, self.eventN
     if event in (1, 2):
-      if self.moveTd is None: self.moveTd = 0
-      else: self.moveTd += td
-      moveTd = self.moveTd
+      self.moveTd += td
+      if self.moveTd >= 1:
+        self.moveTd2 = min(self.moveTd2 + td, 5)
 
       if event == 2: td = -td
       x, y, z = self.forward
       td *= 5
-      if moveTd > 1: td *= 2 ** (moveTd - 1)
+      td *= 3 ** self.moveTd2
 
       self.camX += x * td
       self.camY += y * td
       self.camZ += z * td
       self.calcViewMatrix()
-    else: self.moveTd = None
+    else:
+      self.moveTd = 0
+      self.moveTd2 = max(0, self.moveTd2 - td)
 
   def drawScene(self):
     # glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
