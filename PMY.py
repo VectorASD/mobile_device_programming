@@ -161,6 +161,73 @@ def hierarchy(model, level = ""): # TODO
 
 
 
+def planetProcessor(models, renderer):
+  def hypot(size):
+    x, y, z = size
+    return x ** 2 + y ** 2 + z ** 2
+  def haloSort():
+    def dist(pos):
+      x, y, z = pos
+      # return (x - cX) ** 2 + (y - cY) ** 2 + (z - cZ) ** 2
+      return (x - cX) * fwX + (y - cY) * fwY + (z - cZ) * fwZ
+    Re = renderer # nonlocal to local
+    cX, cY, cZ = Re.camX, Re.camY, Re.camZ
+    fwX, fwY, fwZ = Re.forward
+    nonlocal haloDraws
+    halos2 = sorted(halos, key = lambda halo: dist(halo._pos), reverse = True)
+    haloDraws = [halo.draw for halo in halos2]
+  def drawer():
+    for draw in planetDraws: draw()
+    glDepthMask(False)
+    for draw in haloDraws: draw()
+    glDepthMask(True)
+
+  unionM, PBR_unionM, charModelM = models
+  #     unionM.type = UnionModel
+  # PBR_unionM.type = UnionModel
+  #     unionM.models[i].type = MatrixModel
+  # PBR_unionM.models[i].type = MatrixModel
+  # charModelM.type = None | CharacterModel
+  models = sorted(unionM.models, key = lambda model: hypot(model.info["size"]))
+  groups = {}
+  order = []
+  for model in models:
+    key = model.info["node"]["_parent"]
+    if key in groups: groups[key].append(model)
+    else:
+      groups[key] = [model]
+      order.append(key)
+  planetDraws = []
+  halos = []
+  haloDraws = []
+  result = []
+  X = 0
+  for node in order:
+    group = groups[node]
+    print("🐾🐾🐕", len(group), node["_name"])
+
+    size = group[-1].info["size"][0]
+    if X: X += size
+    pos = (X, -10, 0)
+    X += size
+
+    for model in group:
+      if "decal" in model.info:
+        halos.append(model)
+        model._pos = pos
+      else: planetDraws.append(model.draw)
+    union = UnionModel(group)
+
+    result.append(
+      TranslateModel(union, pos)
+    )
+  renderer.camMoveEvent = haloSort
+  unionM = UnionModel(result)
+  unionM.draw = drawer
+  return unionM, PBR_unionM, charModelM
+
+
+
 class myRenderer:
   glVersion = 2
 
@@ -182,6 +249,7 @@ class myRenderer:
     self.W = self.H = self.WH_ratio = -1
     self.FBO = None
     self.ready = False
+    self.camMoveEvent = lambda: None
 
     textures = rm.get("drawable/textures")
     skybox_labeled = rm.get("drawable/skybox_labeled")
@@ -278,44 +346,11 @@ class myRenderer:
       TexturedModel(TranslateModel(sphere, (0, 3, 0)), fboTex),
     )
 
-    def cb(models):
-      def hypot(size):
-        x, y, z = size
-        return x ** 2 + y ** 2 + z ** 2
-      unionM, PBR_unionM, charModelM = models
-      #     unionM.type = UnionModel
-      # PBR_unionM.type = UnionModel
-      #     unionM.models[i].type = MatrixModel
-      # PBR_unionM.models[i].type = MatrixModel
-      # charModelM.type = None | CharacterModel
-      models = sorted(unionM.models, key = lambda model: hypot(model.info["size"]))
-      groups = {}
-      order = []
-      for model in models:
-        key = model.info["node"]["_parent"]
-        if key in groups: groups[key].append(model)
-        else:
-          groups[key] = [model]
-          order.append(key)
-      res = []
-      halos = []
-      X = 0
-      for node in order:
-        group = groups[node]
-        print("🐾🐾🐕", len(group), node["_name"])
-        size = group[-1].info["size"][0]
-        if X: X += size
-        for model in group:
-          (halos if "decal" in model.info else res).append(TranslateModel(model, (X, -10, 0)))
-        X += size
-      unionM = UnionModel(res + halos)
-      return unionM, PBR_unionM, charModelM
-
     if False:
       union, PBR_model, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", None, self)
       SolarSystem = WaitingModel()
     else:
-      SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", cb, self)
+      SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", planetProcessor, self)
       union = PBR_model = character = WaitingModel()
     hierarchy(SolarSystem)
 
@@ -341,7 +376,7 @@ class myRenderer:
     glViewport(0, 0, width, height)
     self.W, self.H, self.WH_ratio = width, height, width / height
 
-    perspectiveM(self.projectionM, 0, 90, self.WH_ratio, 0.01, 1000)
+    perspectiveM(self.projectionM, 0, 90, self.WH_ratio, 0.01, 10000)
     self.calcMVPmatrix()
 
     if self.FBO is not None: deleteFrameBuffer(self.FBO)
@@ -369,6 +404,7 @@ class myRenderer:
 
     self.updMVP = True
     self.forward = q.rotatedVector(0, 0, -1)
+    self.camMoveEvent()
 
   def eventHandler(self):
     td, event = self.td, self.eventN

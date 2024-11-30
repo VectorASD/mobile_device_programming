@@ -266,20 +266,20 @@ class CharacterModel:
         textureTmp = await(VIEW, lambda: newTexture2(texture))
         size = texture2size[textureTmp]
         texture = await(VIEW, lambda: textureChain.use(size, color, ((textureTmp, color2),), False))
-        print(";'-}", color, color2)
+        # print(";'-}", color, color2)
         dbgTextures = textureTmp, texture
         useDecal = True
       else:
         texArr = ((await(VIEW, lambda: newTexture2(tex)), color) for tex, color in texArr)
         size = texture2size[texArr[0][0]] if texArr else (1, 1)
         # print("🤗 SIZE%s:" % (" (body)" if isBody else ""), size, color, texArr)
-        texture = await(VIEW, lambda: textureChain.use(size, color, texArr, True))
-        #if texArr: dbgTextures = texArr[0][0], texture
+        texture = await(VIEW, lambda: textureChain.use(size, color, texArr, False))
+        if texArr: dbgTextures = texArr[0][0], texture
         useDecal = False
 
       model = await(VIEW, lambda: Model(VBOdata, IBOdata, program))
       if texture: model = TexturedModel(model, texture)
-      if useDecal: model = NoCullFaceModel(model)
+      # if useDecal: model = NoCullFaceModel(model)
       # print("💥🔥", pos[:])
       model = MatrixModel(model, pos, info)
       models2.append(model if alternativeMode else (node["_id"], model))

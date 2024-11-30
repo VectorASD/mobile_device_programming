@@ -559,7 +559,7 @@ def loadRBXM(resource, name, cb, renderer):
       cache[name] = root
     # printTree(root)
     models = modelLoader(root, name, renderer)
-    unionM, PBR_unionM, charModelM = cb(models) if cb else models
+    unionM, PBR_unionM, charModelM = cb(models, renderer) if cb else models
     union.setModel(unionM)
     PBR_union.setModel(PBR_unionM)
     charModel.setModel(charModelM)

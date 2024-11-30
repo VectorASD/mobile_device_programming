@@ -149,6 +149,7 @@ glDrawElements = GLES20._mw_glDrawElements(int, int, int, int) # mode, count, ty
 
 glEnable = GLES20._mw_glEnable(int) # cap
 glDisable = GLES20._mw_glDisable(int) # cap
+glDepthMask = GLES20._mw_glDepthMask(bool) # flag
 GL_BLEND = GLES20._f_GL_BLEND
 GL_DEPTH_TEST = GLES20._f_GL_DEPTH_TEST
 GL_SCISSOR_TEST = GLES20._f_GL_SCISSOR_TEST
