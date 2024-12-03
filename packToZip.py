@@ -19,6 +19,9 @@ paths = (
   ("modules/myGL31.py", None),
   ("modules/myGLtext.py", None),
   ("modules/random.py", None),
+  ("modules/common.py", None),
+  ("modules/planetEngine.py", None),
+
   ("resources/textures.png", None),
   ("resources/avatar.rbxm", None),
   ("resources/skybox_labeled.png", None),

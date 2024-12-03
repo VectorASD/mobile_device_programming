@@ -1,8 +1,3 @@
-from byte import BYTE
-from int import INT
-from float import FLOAT 
-from double import DOUBLE
-
 from android.content.Context import Context
 from android.content.res.Resources import Resources
 from android.view.View import View
@@ -15,28 +10,12 @@ from android.opengl.Matrix import Matrix
 from java.nio.Buffer import NIOBuffer
 from java.nio.ByteBuffer import jByteBuffer
 from java.nio.ByteOrder import ByteOrder
-from java.lang.Math import Math
-from java.util.concurrent.locks.ReentrantLock import ReentrantLock
 from android.graphics.Bitmap import Bitmap
 from android.graphics.BitmapFactory import BitmapFactory
 from android.graphics.BitmapFactory_._Options import BitmapFactoryOptions
 from android.opengl.GLUtils import GLUtils
 
-BYTEarr = ()._a_byte
-INTarr = ()._a_int # INT.new_array(0)
-FLOATarr = ()._a_float
-
-#print(INT.new_array(10)[:])
-#print(INT.new_array(10, 12)[:])
-#exit()
-
-class MyLock:
-  def __init__(self):
-    self.obj = obj = ReentrantLock()
-    self.lock = obj._mw_lock()
-    self.unlock = obj._mw_unlock()
-  def __enter__(self): self.lock()
-  def __exit__(self, exc, val, trace): self.unlock()
+import common
 
 
 
@@ -82,15 +61,6 @@ GL_RENDERBUFFER = GLES20._f_GL_RENDERBUFFER
 GL_STATIC_DRAW = GLES20._f_GL_STATIC_DRAW
 
 
-
-sin = Math._mw_sin(DOUBLE)
-cos = Math._mw_cos(DOUBLE)
-asin = Math._mw_asin(DOUBLE)
-acos = Math._mw_acos(DOUBLE)
-atan2 = Math._mw_atan2(DOUBLE, DOUBLE)
-PI = Math._f_PI
-PI2 = PI / 2
-PI180 = PI / 180
 
 glClearColor = GLES20._mw_glClearColor(float, float, float, float)
 glClear = GLES20._mw_glClear(int)

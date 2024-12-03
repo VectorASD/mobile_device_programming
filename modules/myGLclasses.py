@@ -101,10 +101,17 @@ class TranslateModel:
     self.delete = model.delete
 
   def recalc(self, mat):
+    self.mat = mat
+    self.update()
+  def update(self):
     tMat = FLOAT.new_array(16)
     x, y, z = self.translate
-    translateM2(tMat, 0, mat, 0, x, y, z)
+    translateM2(tMat, 0, self.mat, 0, x, y, z)
     self.model.recalc(tMat)
+  def update2(self, translate):
+    self.translate = translate
+    try: self.update()
+    except AttributeError: pass # если update2 вызван до recalc, то self.mat просто нет
 
   def clone(self):
     return TranslateModel(self.model.clone(), self.model)
@@ -120,10 +127,17 @@ class ScaleModel:
     self.delete = model.delete
 
   def recalc(self, mat):
+    self.mat = mat
+    self.update()
+  def update(self):
     sMat = FLOAT.new_array(16)
     x, y, z = self.scale
-    scaleM2(sMat, 0, mat, 0, x, y, z)
+    scaleM2(sMat, 0, self.mat, 0, x, y, z)
     self.model.recalc(sMat)
+  def update2(self, scale):
+    self.scale = scale
+    try: self.update()
+    except AttributeError: pass # если update2 вызван до recalc, то self.mat просто нет
 
   def clone(self):
     return ScaleModel(self.model.clone(), self.scale)
@@ -151,7 +165,8 @@ class RotateModel:
     self.model.recalc(sMat)
   def update2(self, YPR):
     self.YPR = YPR
-    self.update()
+    try: self.update()
+    except AttributeError: pass # если update2 вызван до recalc, то self.mat просто нет
 
   def clone(self):
     clone = RotateModel(self.model.clone(), self.YPR)
@@ -401,9 +416,9 @@ class Quaternion:
   def __init__(self, x, y, z, w):
     self.xyzw = x, y, z, w
   def fromYPR(yaw, pitch, roll):
-    yaw = yaw * PI180 / 2
-    pitch = pitch * PI180 / 2
-    roll = roll * PI180 / 2
+    yaw = yaw * pi180 / 2
+    pitch = pitch * pi180 / 2
+    roll = roll * pi180 / 2
     sYaw, cYaw = sin(yaw), cos(yaw)
     sPitch, cPitch = sin(pitch), cos(pitch)
     sRoll, cRoll = sin(roll), cos(roll)

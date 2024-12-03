@@ -1,26 +1,6 @@
 # VectorASDRandom (RSA keygen-cryptor pro)
 
-from java.security.MessageDigest import MessageDigest
-
-class sha256:
-  getInstance = MessageDigest._mw_getInstance(str)
-  def __init__(self, md = None):
-    if md is None: md = sha256.getInstance("sha256")
-    self.update = md._mw_update([]._a_byte)
-    self.digest = md._mw_digest()
-    clone = md._mw_clone()
-    self.clone = lambda: sha256(clone())
-class sha1:
-  getInstance = MessageDigest._mw_getInstance(str)
-  def __init__(self, data = None, md = None):
-    if md is None: md = sha1.getInstance("sha1")
-    self.update = update = md._mw_update([]._a_byte)
-    if data is not None: update(data)
-    self.digest = md._mw_digest()
-    clone = md._mw_clone()
-    self.clone = lambda: sha1(None, clone())
-
-
+import common # sha256
 
 def get_primality_testing_rounds(bitsize):
   if bitsize >= 1536: return 3
