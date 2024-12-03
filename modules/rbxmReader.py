@@ -318,11 +318,6 @@ PROP_types = {
   # всё, что после 0x21: не существует
 }
 
-def CFrame2mat(CFrame):
-  if CFrame is None: return (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)._a_float
-  x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = CFrame
-  return (r00, r10, r20, 0, r01, r11, r21, 0, r02, r12, r22, 0, x, y, z, 1)._a_float
-
 
 
 
@@ -548,7 +543,7 @@ def rbxmReader(resource):
 
   return root
 
-def loadRBXM(resource, name, renderer):
+def loadRBXM(resource, name, cb, renderer):
   union = WaitingModel()
   PBR_union = WaitingModel()
   charModel = WaitingModel()
@@ -563,7 +558,8 @@ def loadRBXM(resource, name, renderer):
       root = rbxmReader(resource)
       cache[name] = root
     # printTree(root)
-    unionM, PBR_unionM, charModelM = modelLoader(root, name, renderer)
+    models = modelLoader(root, name, renderer)
+    unionM, PBR_unionM, charModelM = cb(models, renderer) if cb else models
     union.setModel(unionM)
     PBR_union.setModel(PBR_unionM)
     charModel.setModel(charModelM)

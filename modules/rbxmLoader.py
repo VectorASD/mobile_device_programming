@@ -46,6 +46,16 @@ def isRotateMat(mat):
 
 
 
+
+
+def CFrame2mat(CFrame):
+  if CFrame is None: return (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)._a_float
+  x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = CFrame
+  return (r00, r10, r20, 0, r01, r11, r21, 0, r02, r12, r22, 0, x, y, z, 1)._a_float
+def CFrame2mat_onlyPos(CFrame):
+  if CFrame is None: return (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)._a_float
+  return (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, CFrame[0], CFrame[1], CFrame[2], 1)._a_float
+
 def getCFrame(props):
   try: pivot = props["WorldPivotData"]
   except KeyError:
@@ -69,9 +79,19 @@ def getSurfaceAppearance(node):
     if child["_class"] == "SurfaceAppearance": res = child
   return res
 
+def getDecals(node):
+  res = []
+  for child in node["_childs"]:
+    if child["_class"] == "Decal": res.append(child)
+  return res
+
 def checkString(prop):
   type, value = prop
   if type != 0x01: exit("Это не String: %s" % prop)
+  return value
+def checkFloat32(prop):
+  type, value = prop
+  if type != 0x04: exit("Это не Float32: %s" % prop)
   return value
 def checkColor3(prop):
   type, value = prop
@@ -85,6 +105,11 @@ def checkCFrame(prop):
   type, value = prop
   if type != 0x10: exit("Это не CFrame: %s" % prop)
   return value
+def checkEnum(prop, arr):
+  type, value = prop
+  if type != 0x12: exit("Это не Enum: %s" % prop)
+  if value < 0 or value >= len(arr): exit("Значение Enum за пределами: %s (0..%s)" % (value, len(arr) - 1))
+  return value, arr[value]
 def checkReferent(prop):
   type, value = prop
   if type != 0x13: exit("Это не Referent: %s" % prop)
@@ -108,25 +133,36 @@ def makeChainTree(node, used, level = ""):
   # level += "| "
   return tuple((CFrame2mat(C0), mat_invertor(CFrame2mat(C1)), ref_node["_id"], makeChainTree(ref_node, used, level)) for ref_node, C0, C1 in node["_refs1"])
 
+
+
+def getCube():
+  return (
+    -1, -1, -1,   0, 0, 0,   0, 0,   0, 0, 0, 0, # 0
+     1, -1, -1,   0, 0, 0,   1, 0,   0, 0, 0, 0, # 1
+     1, -1,  1,   0, 0, 0,   1, 1,   0, 0, 0, 0, # 2
+    -1, -1,  1,   0, 0, 0,   0, 1,   0, 0, 0, 0, # 3
+    -1,  1, -1,   0, 0, 0,   0, 0,   0, 0, 0, 0, # 4
+     1,  1, -1,   0, 0, 0,   1, 0,   0, 0, 0, 0, # 5
+     1,  1,  1,   0, 0, 0,   1, 1,   0, 0, 0, 0, # 6
+    -1,  1,  1,   0, 0, 0,   0, 1,   0, 0, 0, 0, # 7
+  ), (
+     0,  1,  2,  0,  2,  3, # дно куба
+     0,  1,  4,  1,  4,  5, # фронт
+     1,  5,  2,  2,  5,  6, # правый бок
+     2,  7,  3,  2,  6,  7, # тыл
+     3,  7,  0,  0,  7,  4, # левый бок
+     4,  7,  5,  5,  7,  6, # верх куба
+  )
+
+
+
 def modelHandler(root):
   mesh_cache = STORAGE("mesh_cache")
 
-  def meshPart(node, pos, accessory, is_character_part):
-    props = node["_props"]
-    mesh_id = checkString(props["MeshId"])
-    id = node["_id"]
-    isBody = is_character_part and not accessory
-
-    #print("...", checkVector3(props["size"]), checkVector3(props["InitialSize"]))
-    x, y, z = checkVector3(props["size"])
-    ix, iy, iz = checkVector3(props["InitialSize"])
-    scaleMat = (x / ix, 0, 0, 0, 0, y / iy, 0, 0, 0, 0, z / iz, 0, 0, 0, 0, 1)._a_float
-    multiplyMM(pos, 0, pos, 0, scaleMat, 0)
-    # multiplyMM(pos, 0, scaleMat, 0, pos, 0) не просёк разницы. Возможно, порядок действительно не играет никакой роли
-
+  def mesh2model(mesh_id):
     try:
       model = mesh_cache[mesh_id]
-      print("Cached mesh:", mesh_id)
+      # print("Cached mesh:", mesh_id)
     except KeyError:
       mesh = cdnLoader(mesh_id)
       if not mesh: return
@@ -135,11 +171,45 @@ def modelHandler(root):
       if not model: return
 
       mesh_cache[mesh_id] = model
+    return model
 
+  def meshPart(node, pos, accessory, is_character_part):
+    props = node["_props"]
+    id = node["_id"]
+    isBody = is_character_part and not accessory
+    isPart = node["_class"] == "Part"
+
+    #print("...", checkVector3(props["size"]), checkVector3(props["InitialSize"]))
+    x, y, z = checkVector3(props["size"])
+    ix, iy, iz = (2, 2, 2) if isPart else checkVector3(props["InitialSize"])
+    info = {"size": (x / ix, y / iy, z / iz), "node": node}
+    scaleMat = (x / ix, 0, 0, 0, 0, y / iy, 0, 0, 0, 0, z / iz, 0, 0, 0, 0, 1)._a_float
+    multiplyMM(pos, 0, pos, 0, scaleMat, 0)
+    # multiplyMM(pos, 0, scaleMat, 0, pos, 0) не просёк разницы. Возможно, порядок действительно не играет никакой роли
+
+    if isPart:
+      shape, shapeName = checkEnum(props["shape"], ("Ball", "Block", "Cylinder", "Wedge", "CornerWedge")) # в роблоксе: Enum.PartType
+      # print(shape, shapeName)
+      model = getCube()
+      if shape != 1: exit("Пока поддерживается только форма Block")
+    else:
+      model = mesh2model(checkString(props["MeshId"]))
+      if model is None: return
     VBOdata, IBOdata = model
+
+    decals = getDecals(node)
+    if decals:
+      decal_props = decals[0]["_props"]
+      texture = cdnLoader(checkString(decal_props["Texture"]))
+      face = checkEnum(decal_props["Face"], ("Right", "Top", "Back", "Left", "Bottom", "Front")) # в роблоксе: Enum.NormalId
+      r, g, b = checkColor3(decal_props["Color3"])
+      a = checkFloat32(decal_props["Transparency"])
+      # print("•", len(texture), texture[:32], face, (r, g, b, 1 - a))
+      info["decal"] = texture, face, (r, g, b, 1 - a)
 
     SA = getSurfaceAppearance(node)
     if SA:
+      if isPart: exit("Пока не поддерживается Part + SA :/")
       SA_props = SA["_props"]
       color = checkColor3(SA_props["Color"])
       colorMap = cdnLoader(checkString(SA_props["ColorMap"]))
@@ -147,13 +217,18 @@ def modelHandler(root):
       normalMap = cdnLoader(checkString(SA_props["NormalMap"]))
       roughnessMap = cdnLoader(checkString(SA_props["RoughnessMap"]))
       PBR_textures = color, colorMap, (metalnessMap, normalMap, roughnessMap)
-      result = node, pos, VBOdata, IBOdata, PBR_textures, isBody
+      result = node, pos, VBOdata, IBOdata, PBR_textures, isBody, info
     else:
       r, g, b = checkColor3uint8(props["Color3uint8"])
-      texture = cdnLoader(checkString(props["TextureID"]))
-      texture = ((texture, (1, 1, 1, 1)),) if texture else ()
-      tex = (r / 255, g / 255, b / 255, 1), texture
-      result = node, pos, VBOdata, IBOdata, tex, isBody
+      a = checkFloat32(props["Transparency"])
+      texture = None if isPart else cdnLoader(checkString(props["TextureID"]))
+      #texture = ((texture, (1, 1, 1, 1)),) if texture else ()
+      #tex = (r / 255, g / 255, b / 255, 0), texture
+      if texture:
+        texture = ((texture, (1, 1, 1, 1 - a)),)
+        tex = (0, 0, 0, 0), texture
+      else: tex = (r / 255, g / 255, b / 255, 1 - a), ()
+      result = node, pos, VBOdata, IBOdata, tex, isBody, info
 
     return SA, result
 
@@ -166,7 +241,7 @@ def modelHandler(root):
     if root_pos is None:
       pos = getCFrame(props)
       if pos is not None:
-        mat = CFrame2mat(pos)
+        mat = CFrame2mat_onlyPos(pos)
         root_pos = FLOAT.new_array(16)
         invertM(root_pos, 0, mat, 0)
 
@@ -179,12 +254,12 @@ def modelHandler(root):
         motorTree = makeChainTree(primary, used_in_tree)
         # print("🌴", motorTree)
         # huPosit = recalcChainPos((0, 0, 0), motorTree)
-    elif className == "MeshPart":
+    elif className in ("Part", "MeshPart"):
       # print("%s %s %s\n" % (id, name, props))
       #print(props["size"][1], props["VertexCount"][1], props["TextureID"][1], props["MeshId"][1], props["Transparency"][1], props["DoubleSided"][1], "\n")
       accessory = parent["_class"] == "Accessory"
       if accessory: name = parent["_name"]
-      print("LOADING:", name)
+      # print("LOADING:", name)
 
       is_character_part = id in used_in_tree
 
@@ -193,13 +268,15 @@ def modelHandler(root):
         pos = CFrame2mat(getCFrame(props))
         multiplyMM(pos, 0, root_pos, 0, pos, 0)
 
-      isSA, mesh = meshPart(node, pos, accessory, is_character_part)
-      if is_character_part:
-        if isSA: characterPBR_models.append(mesh)
-        else: characterModels.append(mesh)
-      else:
-        if isSA: PBR_models.append(mesh)
-        else: models.append(mesh)
+      data = meshPart(node, pos, accessory, is_character_part)
+      if data is not None:
+        isSA, mesh = data
+        if is_character_part:
+          if isSA: characterPBR_models.append(mesh)
+          else: characterModels.append(mesh)
+        else:
+          if isSA: PBR_models.append(mesh)
+          else: models.append(mesh)
 
     elif className == "BodyColors":
       bodyColors = {

@@ -3,6 +3,7 @@ import myGL
 
 
 class Model:
+  type = "Model"
   def __init__(self, VBOdata, IBOdata = None, shaderProgram = None, printer = True):
     if IBOdata is None and len(VBOdata) == 4:
       self.data = VBOdata
@@ -14,6 +15,7 @@ class Model:
     glGenBuffers(2, buffers, 0)
     VBO, IBO = buffers
 
+    sizes = len(VBOdata), len(IBOdata)
     # 3d-координаты, раскраска вершин и 2d-UV вершин
     VBOdata = FloatBuffer(VBOdata)
     # сами полигоны = сетка
@@ -27,7 +29,7 @@ class Model:
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, IBOdata.capacity() * 4, IBOdata.fb, GL_STATIC_DRAW)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
-    if printer: print2("✅ OK buffers:", VBO, IBO)
+    if printer: print2("✅ OK buffers:", VBO, IBO, "(%s, %s words)" % sizes)
     self.data = VBO, IBO, IBOdata.capacity(), shaderProgram
     self.matrix = None
 
@@ -92,6 +94,7 @@ def buildModel(faces):
 
 
 class TranslateModel:
+  type = "TranslateModel"
   def __init__(self, model, translate):
     self.model = model
     self.translate = translate
@@ -99,10 +102,17 @@ class TranslateModel:
     self.delete = model.delete
 
   def recalc(self, mat):
+    self.mat = mat
+    self.update()
+  def update(self):
     tMat = FLOAT.new_array(16)
     x, y, z = self.translate
-    translateM2(tMat, 0, mat, 0, x, y, z)
+    translateM2(tMat, 0, self.mat, 0, x, y, z)
     self.model.recalc(tMat)
+  def update2(self, translate):
+    self.translate = translate
+    try: self.update()
+    except AttributeError: pass # если update2 вызван до recalc, то self.mat просто нет
 
   def clone(self):
     return TranslateModel(self.model.clone(), self.model)
@@ -110,6 +120,7 @@ class TranslateModel:
 
 
 class ScaleModel:
+  type = "ScaleModel"
   def __init__(self, model, scale):
     self.model = model
     self.scale = scale
@@ -117,10 +128,17 @@ class ScaleModel:
     self.delete = model.delete
 
   def recalc(self, mat):
+    self.mat = mat
+    self.update()
+  def update(self):
     sMat = FLOAT.new_array(16)
     x, y, z = self.scale
-    scaleM2(sMat, 0, mat, 0, x, y, z)
+    scaleM2(sMat, 0, self.mat, 0, x, y, z)
     self.model.recalc(sMat)
+  def update2(self, scale):
+    self.scale = scale
+    try: self.update()
+    except AttributeError: pass # если update2 вызван до recalc, то self.mat просто нет
 
   def clone(self):
     return ScaleModel(self.model.clone(), self.scale)
@@ -128,6 +146,7 @@ class ScaleModel:
 
 
 class RotateModel:
+  type = "RotateModel"
   def __init__(self, model, YPR):
     self.model = model
     self.YPR = YPR
@@ -147,7 +166,8 @@ class RotateModel:
     self.model.recalc(sMat)
   def update2(self, YPR):
     self.YPR = YPR
-    self.update()
+    try: self.update()
+    except AttributeError: pass # если update2 вызван до recalc, то self.mat просто нет
 
   def clone(self):
     clone = RotateModel(self.model.clone(), self.YPR)
@@ -158,9 +178,11 @@ class RotateModel:
 
 
 class MatrixModel:
-  def __init__(self, model, matrix):
+  type = "MatrixModel"
+  def __init__(self, model, matrix, info):
     self.model = model
     self.matrix = matrix
+    self.info = info
     self.draw = model.draw
     self.delete = model.delete
 
@@ -175,6 +197,7 @@ class MatrixModel:
 
 
 class UnionModel:
+  type = "UnionModel"
   def __init__(self, models):
     self.models = models
 
@@ -196,6 +219,7 @@ class UnionModel:
 
 
 class TexturedModel:
+  type = "TexturedModel"
   def __init__(self, model, textureID):
     self.model = model
     self.textureID = textureID
@@ -214,6 +238,7 @@ class TexturedModel:
 
 
 class NoCullFaceModel:
+  type = "NoCullFaceModel"
   def __init__(self, model):
     self.model = model
     self.delete = model.delete
@@ -232,6 +257,7 @@ class NoCullFaceModel:
 dbgTextures = 0, 0
 
 class CharacterModel:
+  type = "CharacterModel"
   def __init__(self, character, renderer):
     global dbgTextures
 
@@ -243,39 +269,50 @@ class CharacterModel:
     program = renderer.noPBR # renderer.program
     textureChain = renderer.textureChain
     PBR = renderer.pbr
-    #bodyTexture = await(VIEW, lambda: textureChain.use((1, 1), (1, 0.95, 0.9, 1), ()))
+    #bodyTexture = await(VIEW, lambda: textureChain.use((1, 1), (1, 0.95, 0.9, 1)))
     self.models = models2 = []
     self.PBR_models = PBR_models2 = []
 
-    for node, pos, VBOdata, IBOdata, tex, isBody in models:
+    for node, pos, VBOdata, IBOdata, tex, isBody, info in models:
       #if isBody: texture = bodyTexture
       #else: # tex всегда есть
       color, texArr = tex
-      texArr = ((await(VIEW, lambda: newTexture2(tex)), color) for tex, color in texArr)
-      size = texture2size[texArr[0][0]] if texArr else (1, 1)
-      print("🤗 SIZE%s:" % (" (body)" if isBody else ""), size, color, texArr)
-      texture = await(VIEW, lambda: textureChain.use(size, color, texArr))
-      if texArr: dbgTextures = texArr[0][0], texture
+      if not texArr and "decal" in info:
+        texture, body, color2 = info["decal"]
+        textureTmp = await(VIEW, lambda: newTexture2(texture))
+        size = texture2size[textureTmp]
+        texture = await(VIEW, lambda: textureChain.use(size, color, ((textureTmp, color2),), False))
+        # print(";'-}", color, color2)
+        dbgTextures = textureTmp, texture
+        useDecal = True
+      else:
+        texArr = ((await(VIEW, lambda: newTexture2(tex)), color) for tex, color in texArr)
+        size = texture2size[texArr[0][0]] if texArr else (1, 1)
+        # print("🤗 SIZE%s:" % (" (body)" if isBody else ""), size, color, texArr)
+        texture = await(VIEW, lambda: textureChain.use(size, color, texArr, False))
+        if texArr: dbgTextures = texArr[0][0], texture
+        useDecal = False
 
       model = await(VIEW, lambda: Model(VBOdata, IBOdata, program))
       if texture: model = TexturedModel(model, texture)
+      # if useDecal: model = NoCullFaceModel(model)
       # print("💥🔥", pos[:])
-      model = MatrixModel(model, pos)
+      model = MatrixModel(model, pos, info)
       models2.append(model if alternativeMode else (node["_id"], model))
 
-    for node, pos, VBOdata, IBOdata, PBR_textures, isBody in PBR_models:
+    for node, pos, VBOdata, IBOdata, PBR_textures, isBody, info in PBR_models:
       (r, g, b), colorMap, otherTex = PBR_textures
       if colorMap is None:
-        colorMap = await(VIEW, lambda: textureChain.use((1, 1), (r, g, b, 1), ()))
+        colorMap = await(VIEW, lambda: textureChain.use((1, 1), (r, g, b, 1)))
       else:
-        colorMap = await(VIEW, lambda: newTexture2(colorMap))
+        colorMap2 = await(VIEW, lambda: newTexture2(colorMap))
         size = texture2size[colorMap]
-        colorMap = await(VIEW, lambda: textureChain.use(size, (0, 0, 0, 1), ((colorMap, (r, g, b, 1)),)))
+        colorMap = await(VIEW, lambda: textureChain.use(size, (0, 0, 0, 1), ((colorMap2, (r, g, b, 1)),), True))
       metalnessMap, normalMap, roughnessMap = (None if tex is None else await(VIEW, lambda: newTexture2(tex)) for tex in otherTex)
 
       model = await(VIEW, lambda: Model(VBOdata, IBOdata, PBR))
       model = PBR_Model(model, colorMap, metalnessMap, normalMap, roughnessMap)
-      model = MatrixModel(model, pos)
+      model = MatrixModel(model, pos, info)
       PBR_models2.append(model if alternativeMode else (node["_id"], model))
 
     if alternativeMode: return
@@ -344,13 +381,14 @@ class CharacterModel:
 
 
 class WaitingModel:
+  type = "WaitingModel"
   def __init__(self):
     self.saved_mat = None
     self.model = None
     self.draw = lambda: None
     self.needDelete = False
   def setModel(self, model):
-    print("SET MODEL:", model)
+    # print("SET MODEL:", model)
     self.model = model
     self.recalc2()
 
@@ -362,7 +400,7 @@ class WaitingModel:
     mat = self.saved_mat
     model = self.model
     if mat is None or model is None: return
-    print("GET MODEL:", model)
+    # print("GET MODEL:", model)
     model.recalc(mat)
     self.delete = model.delete
     if self.needDelete: model.delete()
@@ -379,9 +417,9 @@ class Quaternion:
   def __init__(self, x, y, z, w):
     self.xyzw = x, y, z, w
   def fromYPR(yaw, pitch, roll):
-    yaw = yaw * PI180 / 2
-    pitch = pitch * PI180 / 2
-    roll = roll * PI180 / 2
+    yaw = yaw * pi180 / 2
+    pitch = pitch * pi180 / 2
+    roll = roll * pi180 / 2
     sYaw, cYaw = sin(yaw), cos(yaw)
     sPitch, cPitch = sin(pitch), cos(pitch)
     sRoll, cRoll = sin(roll), cos(roll)
@@ -731,7 +769,9 @@ uniform sampler2D uTexture;
 uniform vec4 uTextureColor;
 
 void main() {
-    gl_FragColor = texture2D(uTexture, vaUV) * uTextureColor;
+  vec4 color = texture2D(uTexture, vaUV) * uTextureColor;
+  color.a = pow(color.a, 1. / 5.5); // усиленная гамма-коррекция альфы (5.5 вместо 2.2)
+  gl_FragColor = color;
 }
 """, ('vPosition', 'vUV'), ('uTexture', 'uTextureColor')))
     vPosition = attribs["vPosition"]
@@ -752,7 +792,7 @@ void main() {
       1, 1, 1, 1,
     ), (0, 1, 2, 1, 2, 3), self)
 
-  def use(self, size, baseColor, textures = ()):
+  def use(self, size, baseColor, textures = (), removeSources = False):
     W, H = size
     fbo, texture, _ = newFrameBuffer(W, H, False, self.FBO, GL_LINEAR)
     self.FBO = fbo
@@ -762,26 +802,31 @@ void main() {
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbo)
     glViewport(0, 0, W, H)
+    glScissor(0, 0, W, H)
     r, g, b, a = baseColor
     glClearColor(r, g, b, a)
+    glEnable(GL_SCISSOR_TEST)
     glClear(GL_COLOR_BUFFER_BIT)
+    glDisable(GL_SCISSOR_TEST)
     glDisable(GL_CULL_FACE)
-    #glDisable(GL_DEPTH_TEST)
+    glDisable(GL_DEPTH_TEST)
 
     enableProgram(self.program)
     glUniform1i(self.uTexture, 0)
+    #glUniform1i(self.uUseGamma, int(gamma))
     draw = self.model.draw
     for texture2, textureColor in textures:
       r, g, b, a = textureColor
       glUniform4f(self.uTextureColor, r, g, b, a)
       glBindTexture(GL_TEXTURE_2D, texture2)
       draw()
+      if removeSources: removeTexture(texture2)
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     x, y, w, h = oldViewportParams
     glViewport(x, y, w, h)
     glEnable(GL_CULL_FACE)
-    #glEnable(GL_DEPTH_TEST)
+    glEnable(GL_DEPTH_TEST)
 
     return texture
 
@@ -791,7 +836,11 @@ void main() {
     glUniform4f(self.uTextureColor, 1, 1, 1, 1)
 
     glBindTexture(GL_TEXTURE_2D, self.renderer.FBO[1])
+    glDisable(GL_CULL_FACE)
+    glDisable(GL_DEPTH_TEST)
     self.model.draw()
+    glEnable(GL_CULL_FACE)
+    glEnable(GL_DEPTH_TEST)
 
 
 

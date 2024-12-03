@@ -82,7 +82,7 @@ class MyCanvas:
 class MyBitmap:
   creator = Bitmap._mw_createBitmap(int, int, BitmapConfig)
   def __init__(self, sx, sy, t):
-    self.bmp = bmp = creator(sx.int, sy.int, t)
+    self.bmp = bmp = MyBitmap.creator(sx.int, sy.int, t)
     self.getConfig = bmp._mw_getConfig()
     self.recycle = bmp._mw_recycle()
     self.compress = bmp._mw_compress(CompressFormat, int, OutputStream) # format, quality, stream
@@ -298,6 +298,7 @@ void main() {
     self.height = 24
     self.color = (0, 0, 0, 1)
     self.printer = True
+    self.cache = {}
 
   def setHeight(self, height):
     self.height = height
@@ -320,7 +321,12 @@ void main() {
     self.color = r / 255, g / 255, b / 255, self.color[3]
 
   def create(self, startX, startY, text):
-    mul = 2 / self.renderer.W
+    W = self.renderer.W
+    key = W, self.height, startX, startY, text
+    try: return self.cache[key]
+    except KeyError: pass
+
+    mul = 2 / W
     mTop, mBottom, dict = self.dict
     # mHeight = mBottom - mTop
     mul *= self.height / -mTop
@@ -375,7 +381,9 @@ void main() {
       ))
       x = x2
       step += 4
-    return Model(VBO, IBO, self, self.printer)
+
+    self.cache[key] = model = Model(VBO, IBO, self, self.printer)
+    return model
 
   def replace(self, index, posX, posY, L, text):
     L /= 2

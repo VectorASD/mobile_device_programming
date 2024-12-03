@@ -1,8 +1,3 @@
-from byte import BYTE
-from int import INT
-from float import FLOAT 
-from double import DOUBLE
-
 from android.content.Context import Context
 from android.content.res.Resources import Resources
 from android.view.View import View
@@ -15,28 +10,12 @@ from android.opengl.Matrix import Matrix
 from java.nio.Buffer import NIOBuffer
 from java.nio.ByteBuffer import jByteBuffer
 from java.nio.ByteOrder import ByteOrder
-from java.lang.Math import Math
-from java.util.concurrent.locks.ReentrantLock import ReentrantLock
 from android.graphics.Bitmap import Bitmap
 from android.graphics.BitmapFactory import BitmapFactory
 from android.graphics.BitmapFactory_._Options import BitmapFactoryOptions
 from android.opengl.GLUtils import GLUtils
 
-BYTEarr = ()._a_byte
-INTarr = ()._a_int # INT.new_array(0)
-FLOATarr = ()._a_float
-
-#print(INT.new_array(10)[:])
-#print(INT.new_array(10, 12)[:])
-#exit()
-
-class MyLock:
-  def __init__(self):
-    self.obj = obj = ReentrantLock()
-    self.lock = obj._mw_lock()
-    self.unlock = obj._mw_unlock()
-  def __enter__(self): self.lock()
-  def __exit__(self, exc, val, trace): self.unlock()
+import common
 
 
 
@@ -83,20 +62,13 @@ GL_STATIC_DRAW = GLES20._f_GL_STATIC_DRAW
 
 
 
-sin = Math._mw_sin(DOUBLE)
-cos = Math._mw_cos(DOUBLE)
-asin = Math._mw_asin(DOUBLE)
-acos = Math._mw_acos(DOUBLE)
-atan2 = Math._mw_atan2(DOUBLE, DOUBLE)
-PI = Math._f_PI
-PI2 = PI / 2
-PI180 = PI / 180
-
 glClearColor = GLES20._mw_glClearColor(float, float, float, float)
 glClear = GLES20._mw_glClear(int)
-glViewport = GLES20._mw_glViewport(int, int, int, int)
+glViewport = GLES20._mw_glViewport(int, int, int, int) # x, y, width, height
+glScissor = GLES20._mw_glScissor(int, int, int, int) # x, y, width, height
 glGetIntegerv = GLES20._mw_glGetIntegerv(int, INTarr, int) # pname, params, offset
 GL_VIEWPORT = GLES20._f_GL_VIEWPORT
+GL_SCISSOR_BOX = GLES20._f_GL_SCISSOR_BOX
 
 glCreateShader = GLES20._mw_glCreateShader(int)
 glShaderSource = GLES20._mw_glShaderSource(int, str)
@@ -147,8 +119,10 @@ glDrawElements = GLES20._mw_glDrawElements(int, int, int, int) # mode, count, ty
 
 glEnable = GLES20._mw_glEnable(int) # cap
 glDisable = GLES20._mw_glDisable(int) # cap
+glDepthMask = GLES20._mw_glDepthMask(bool) # flag
 GL_BLEND = GLES20._f_GL_BLEND
 GL_DEPTH_TEST = GLES20._f_GL_DEPTH_TEST
+GL_SCISSOR_TEST = GLES20._f_GL_SCISSOR_TEST
 GL_CULL_FACE = GLES20._f_GL_CULL_FACE
 
 glBlendFunc = GLES20._mw_glBlendFunc(int, int) # src factor, dst factor
@@ -394,6 +368,13 @@ def newTexture2(data):
   bitmap = decodeByteArray(data, 0, len(data), bitmapFactoryOptions)
   return _newTexture(bitmap, GL_LINEAR)
 
+def removeTexture(textureId):
+  print2("♻️ DEL texture:", textureId)
+  ids = INT.new_array(1)
+  ids[0] = textureId
+  glDeleteTextures(1, ids, 0)
+  texture2size.pop(textureId)
+
 
 
 GLES20_fields = GLES20.fields()
@@ -408,11 +389,11 @@ def checkGLError():
   if err != GL_NO_ERROR: print2("🔥 glError:", err, "(%s)" % GL_errors.get(err, "?"))
   else: print2("gl ok")
 
-def checkFrameBuffer():
+def checkFrameBuffer(print):
   status = glCheckFramebufferStatus(GL_FRAMEBUFFER)
   if status != GL_FRAMEBUFFER_COMPLETE:
     print2("💥 FBO error:", status, "(%s)" % GL_errors.get(status, "?"))
-  else: print2("✅ FBO ok")
+  elif print: print2("✅ FBO ok")
 
 def newFrameBuffer(width, height, depthTest = True, oldFBO = None, filter = GL_NEAREST):
   arr = INT.new_array(3)
@@ -427,7 +408,7 @@ def newFrameBuffer(width, height, depthTest = True, oldFBO = None, filter = GL_N
   glBindFramebuffer(GL_FRAMEBUFFER, fbo)
 
   glBindTexture(GL_TEXTURE_2D, textureId)
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, None)
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter)
@@ -449,8 +430,8 @@ def newFrameBuffer(width, height, depthTest = True, oldFBO = None, filter = GL_N
   # checkFrameBuffer() ok
   # трафарет (при том не нужный мне 🗿) отваливается с ошибкой GL_FRAMEBUFFER_UNSUPPORTED
   #glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo2)
-  checkFrameBuffer()
- 
+  checkFrameBuffer(oldFBO is None)
+
   print2("🥳 FBO:", fbo, textureId, rbo if depthTest else "x")
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0)
