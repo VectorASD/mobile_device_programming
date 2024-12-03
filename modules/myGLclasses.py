@@ -15,6 +15,7 @@ class Model:
     glGenBuffers(2, buffers, 0)
     VBO, IBO = buffers
 
+    sizes = len(VBOdata), len(IBOdata)
     # 3d-координаты, раскраска вершин и 2d-UV вершин
     VBOdata = FloatBuffer(VBOdata)
     # сами полигоны = сетка
@@ -28,7 +29,7 @@ class Model:
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, IBOdata.capacity() * 4, IBOdata.fb, GL_STATIC_DRAW)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
-    if printer: print2("✅ OK buffers:", VBO, IBO)
+    if printer: print2("✅ OK buffers:", VBO, IBO, "(%s, %s words)" % sizes)
     self.data = VBO, IBO, IBOdata.capacity(), shaderProgram
     self.matrix = None
 

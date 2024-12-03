@@ -389,11 +389,11 @@ def checkGLError():
   if err != GL_NO_ERROR: print2("🔥 glError:", err, "(%s)" % GL_errors.get(err, "?"))
   else: print2("gl ok")
 
-def checkFrameBuffer():
+def checkFrameBuffer(print):
   status = glCheckFramebufferStatus(GL_FRAMEBUFFER)
   if status != GL_FRAMEBUFFER_COMPLETE:
     print2("💥 FBO error:", status, "(%s)" % GL_errors.get(status, "?"))
-  else: print2("✅ FBO ok")
+  elif print: print2("✅ FBO ok")
 
 def newFrameBuffer(width, height, depthTest = True, oldFBO = None, filter = GL_NEAREST):
   arr = INT.new_array(3)
@@ -430,8 +430,8 @@ def newFrameBuffer(width, height, depthTest = True, oldFBO = None, filter = GL_N
   # checkFrameBuffer() ok
   # трафарет (при том не нужный мне 🗿) отваливается с ошибкой GL_FRAMEBUFFER_UNSUPPORTED
   #glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo2)
-  checkFrameBuffer()
- 
+  checkFrameBuffer(oldFBO is None)
+
   print2("🥳 FBO:", fbo, textureId, rbo if depthTest else "x")
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0)

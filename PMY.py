@@ -178,21 +178,43 @@ def planetProcessor(models, renderer):
     halos2 = sorted(halos, key = lambda halo: dist(halo._pos), reverse = True)
     haloDraws = [halo.draw for halo in halos2]
   def drawer():
-    recalcPlanetPositions()
     for draw in planetDraws: draw()
     glDepthMask(False)
     for draw in haloDraws: draw()
     glDepthMask(True)
   def recalcPlanetPositions():
-    nonlocal day
+    nonlocal day, prevTargetPos
     SunX, SunY, SunZ = sunPosition
-    for name, pos in planetPositions(day).items():
-      if name == "Chiron": continue # слишком маленькая планета, чтобы у неё вообще была моделька
-      x, z, y = pos[:v]
-      # print(name, ("🔥", "✅")[name in planets], x, y, z)
-      newPos = SunX + x * step, SunY + y * step, SunZ + z * step
-      planets[name][1].update2(newPos)
+    positions = planetPositions(day)
+    for name in planetNames:
+      pos = positions[name]
+      x, z, y = pos[:3]
+      PlanetX = SunX + x * step
+      PlanetY = SunY + y * step
+      PlanetZ = SunZ + z * step
+      radius, model = planets[name]
+      model.update2((PlanetX, PlanetY, PlanetZ))
+      for moonName in moonNames.get(name, ()):
+        x, z, y = positions[moonName][:3]
+        MoonX = PlanetX + x * radius
+        MoonY = PlanetY + y * radius
+        MoonZ = PlanetZ + z * radius
+        planets[moonName][1].update2((MoonX, MoonY, MoonZ))
     day += renderer.td
+
+    radius, model = planets[target]
+    x, y, z = model.translate
+    if prevTargetPos:
+      px, py, pz = prevTargetPos
+      dx, dy, dz = x - px, y - py, z - pz
+      renderer.moveCam(dx, dy, dz)
+    else:
+      fx, fy, fz = renderer.forward
+      r = radius * 2.5
+      renderer.setCamPos(x - fx * r, y - fy * r, z - fz * r)
+    prevTargetPos = x, y, z
+
+    # step = (sunS / sunRadius) / max(1, 10 - day / 2)
 
   # Индекс неиспользованных в двигателе планет (от большей к меньшей):
   # Название модели в реестре SolarSystem.rbxm - описание
@@ -201,7 +223,7 @@ def planetProcessor(models, renderer):
   # Titan - спутник Сатурна
   # Callisto - спутник Юпитера
   # Io - спутник Юпитера
-  # Moon (Luna) - ну понятно
+#✅ Moon (Luna) - ну понятно
   # Europa - спутник Юпитера
   # Triton - спутник Нептуна
   # Haumea — карликовая планета Солнечной системы, классифицирующаяся как плутоид, транснептуновый объект (ТНО)
@@ -273,17 +295,18 @@ def planetProcessor(models, renderer):
   haloDraws = []
   result = []
   X = 0
-  planetNames = set(planetPositions(0))
+  planetNames = {"Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Ceres", "Eris"}
+  moonNames = {"Earth": ("Moon (Luna)",)}
   for node in order:
     group = groups[node]
     name = node["_name"]
     print("🐾🐾🐕", len(group), name, ("🔥", "✅")[name in planetNames])
 
-    size = group[-1].info["size"][0]
+    radius = group[-1].info["size"][0] # с учётом пояса и только X
     if name not in planetNames:
-      if X: X += size
+      if X: X += radius
       pos = (X, -10, 0)
-      X += size
+      X += radius
     else: pos = (0, 0, 0)
 
     for model in group:
@@ -293,18 +316,26 @@ def planetProcessor(models, renderer):
       else: planetDraws.append(model.draw)
     union = UnionModel(group)
 
+    n = len(group) - 1
+    while "decal" in group[n].info: n -= 1
+    radius = sum(group[n].info["size"]) / 3 # без учёта пояса и со всеми осями
+
     translated = TranslateModel(union, pos)
     result.append(translated)
-    planets[name] = size, translated
+    planets[name] = radius, translated
 
   sunS = planets["Sun"][0]
   step = sunS / sunRadius
   print("step:", step) # Условных единиц длины на одну AU
-  step /= 100 # Т.к. их СЛИШКОМ много
+  # step /= 10 # Т.к. их СЛИШКОМ много
   sunPosition = planets["Sun"][1].translate
   day = 0
 
+  target = "Earth"
+  prevTargetPos = None
+
   renderer.camMoveEvent = haloSort
+  renderer.recalcPlanetPositions = recalcPlanetPositions
   unionM = UnionModel(result)
   unionM.draw = drawer
   return unionM, PBR_unionM, charModelM
@@ -333,6 +364,7 @@ class myRenderer:
     self.FBO = None
     self.ready = False
     self.camMoveEvent = lambda: None
+    self.recalcPlanetPositions = lambda: None
 
     textures = rm.get("drawable/textures")
     skybox_labeled = rm.get("drawable/skybox_labeled")
@@ -459,7 +491,7 @@ class myRenderer:
     glViewport(0, 0, width, height)
     self.W, self.H, self.WH_ratio = width, height, width / height
 
-    perspectiveM(self.projectionM, 0, 90, self.WH_ratio, 0.01, 100000)
+    perspectiveM(self.projectionM, 0, 90, self.WH_ratio, 0.01, 1000000)
     self.calcMVPmatrix()
 
     if self.FBO is not None: deleteFrameBuffer(self.FBO)
@@ -498,7 +530,7 @@ class myRenderer:
 
       if event == 2: td = -td
       x, y, z = self.forward
-      td *= 5
+      td *= 10
       td *= 3 ** self.moveTd2
 
       self.camX += x * td
@@ -550,7 +582,7 @@ class myRenderer:
 
     self.fps()
     self.eventHandler()
-    if self.updMVP: self.calcMVPmatrix()
+    self.recalcPlanetPositions()
 
     try: character = self.character.model
     except AttributeError: character = None
@@ -558,6 +590,8 @@ class myRenderer:
       yaw, pitch, roll = character.YPR
       yaw = (yaw + 15 * self.td) % 360
       character.setRotation(yaw, pitch, roll)
+
+    if self.updMVP: self.calcMVPmatrix()
 
     glBindFramebuffer(GL_FRAMEBUFFER, self.FBO[0])
     self.drawScene()
@@ -570,6 +604,17 @@ class myRenderer:
     if not self.ready: return
     self.yaw -= dx * 0.5
     self.pitch = max(-90, min(self.pitch - dy * 0.5, 90))
+    self.calcViewMatrix()
+
+  def setCamPos(self, x, y, z):
+    self.camX = x
+    self.camY = y
+    self.camZ = z
+    self.calcViewMatrix()
+  def moveCam(self, dx, dy, dz):
+    self.camX += dx
+    self.camY += dy
+    self.camZ += dz
     self.calcViewMatrix()
 
   def event(self, up, down, misc):

@@ -110,6 +110,49 @@ def Ploutonas(d):
   x, y, z = spherical2rectangular(long, lat, r)
   return x, y, z, long, lat, r
 
+def Moon_Planet(N, i, w, a, e, M, planet_N, planet_w, planet_M):
+  x, y, z, long, lat, r = Planet_Sun(N, i, w, a, e, M)
+
+  L = N + w + M # moon' s mean longtitude
+  planet_L = planet_N + planet_w + planet_M
+
+  #moon' s mean anomally
+  Ds = (L - planet_L) % 360 # moon' s mean elogation
+  Fs = (L - N) % 360 # moon' s argument of latitude
+
+  #Peturbations in Longitude
+  D1 = -1.274 * sin((M - 2 * Ds) * pi180) #evection
+  D2 = 0.658 * sin((2 * Ds) * pi180) #variation
+  D3 = -0.186 * sin((planet_M) * pi180)
+  D4 = -0.059 * sin((2 * M - 2 * Ds) * pi180)
+  D5 = -0.057 * sin((M - 2 * Ds + planet_M) * pi180)
+  D6 = 0.053 * sin((M + 2 * Ds) * pi180)
+  D7 = 0.046 * sin((2 * Ds - planet_M) * pi180)
+  D8 = 0.041 * sin((M - planet_M) * pi180)
+  D9 = -0.035 * sin(Ds * pi180) #parallactic equation
+  D10 = -0.031 * sin((M + planet_M) * pi180)
+  D11 = -0.015 * sin((2 * Fs - 2 * Ds) * pi180)
+  D12 = 0.011 * sin((M - 4 * Ds) * pi180)
+  #Peturbations in Latitude
+  D13 = -0.173 * sin((Fs - 2 * Ds) * pi180)
+  D14 = -0.055 * sin((M - Fs - 2 * Ds) * pi180)
+  D15 = -0.046 * sin((M + Fs - 2 * Ds) * pi180)
+  D16 = 0.033 * sin((Fs + 2 * Ds) * pi180)
+  D17 = 0.017 * sin((2 * M + Fs) * pi180)
+  #Peturbations in Distance
+  D18 = -0.58 * cos((M - 2 * Ds) * pi180)
+  D19 = -0.46 * cos((2 * Ds) * pi180)
+
+  longdists = D1+D2+D3+D4+D5+D6+D7+D8+D9+D10+D11+D12
+  latdists = D13+D14+D15+D16+D17
+  moondist = D18+D19
+
+  long += longdists
+  lat += latdists
+  r += moondist
+  x, y, z = spherical2rectangular(long, lat, r)
+  return x, y, z, long, lat, r
+
 def planetPositions(d):
   # print(time_to_d(2000, 1, 1, 0, 0)) # 1.0
   # d = time_to_d(2020, 1, 1, 12, 0)
@@ -138,11 +181,20 @@ def planetPositions(d):
   afroditi = Planet_Sun(N, i, w, a, e, M)
 
   # Earth (зЮмля)
-  w = 282.9404 + 4.70935E-5 * d      
+  w = 282.9404 + 4.70935E-5 * d
   a = 1 # расстояние от Солнца до Земли как раз и задаёт 1 а.е.
   e = 0.016709 - 1.151E-9 * d
   M = 356.047 + 0.9856002585 * d
   earth = Earth(w, a, e, M)
+
+  # Луна
+  N = 125.1228 - 0.0529538083 * d
+  i = 5.1454
+  ws = 318.0634 + 0.1643573223 * d
+  a = 60.2666 # earth's equatorial radius
+  e = 0.054900
+  Ms = 115.3654 + 13.0649929509 * d
+  moon = Moon_Planet(N, i, ws, a, e, Ms, 0, w, M)
 
   # Aris (Марс)
   N = 49.5574 + 2.11081E-5 * d
@@ -276,6 +328,7 @@ def planetPositions(d):
     'Ceres'  : ceres,
     'Chiron' : chiron,
     'Eris'   : eris,
+    "Moon (Luna)": moon,
   }
 
 
