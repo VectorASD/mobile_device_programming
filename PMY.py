@@ -171,11 +171,10 @@ def planetProcessor(models, renderer):
       x, y, z = pos
       # return (x - cX) ** 2 + (y - cY) ** 2 + (z - cZ) ** 2
       return (x - cX) * fwX + (y - cY) * fwY + (z - cZ) * fwZ
-    Re = renderer # nonlocal to local
-    cX, cY, cZ = Re.camX, Re.camY, Re.camZ
-    fwX, fwY, fwZ = Re.forward
+    cX, cY, cZ = renderer.camera
+    fwX, fwY, fwZ = renderer.forward
     nonlocal haloDraws
-    halos2 = sorted(halos, key = lambda halo: dist(halo._pos), reverse = True)
+    halos2 = sorted(halos, key = lambda halo: dist(halo._pos.translate), reverse = True)
     haloDraws = [halo.draw for halo in halos2]
   def drawer():
     for draw in planetDraws: draw()
@@ -193,6 +192,7 @@ def planetProcessor(models, renderer):
       PlanetY = SunY + y * step
       PlanetZ = SunZ + z * step
       radius, model = planets[name]
+      radius /= dist_div
       model.update2((PlanetX, PlanetY, PlanetZ))
       for moonName in moonNames.get(name, ()):
         x, z, y = positions[moonName][:3]
@@ -207,7 +207,8 @@ def planetProcessor(models, renderer):
     if prevTargetPos:
       px, py, pz = prevTargetPos
       dx, dy, dz = x - px, y - py, z - pz
-      renderer.moveCam(dx, dy, dz)
+      if dx or dy or dz:
+        renderer.moveCam(dx, dy, dz)
     else:
       fx, fy, fz = renderer.forward
       r = radius * 2.5
@@ -215,6 +216,34 @@ def planetProcessor(models, renderer):
     prevTargetPos = x, y, z
 
     # step = (sunS / sunRadius) / max(1, 10 - day / 2)
+
+  def changeTarget(inc):
+    nonlocal target, targetN, prevTargetPos
+    if type(inc) is str:
+      try: targetN = targetNames.index(inc)
+      except ValueError: return
+      target = inc
+      radius, model = planets[target]
+      prevTargetPos = model.translate
+    else:
+      targetN = (targetN + (1 if inc else -1)) % len(targetNames)
+      target = targetNames[targetN]
+      prevTargetPos = None
+    renderer.setTargetText(target)
+  def findNearestPlanet():
+    def dist(pos):
+      x, y, z = pos
+      return (x - cX) ** 2 + (y - cY) ** 2 + (z - cZ) ** 2
+    cX, cY, cZ = renderer.camera
+    mi = 1e400
+    result = None
+    for name in planets:
+      radius, model = planets[name]
+      D = dist(model.translate) ** 0.5 - radius
+      if D < mi:
+        mi = D
+        result = D, name, radius, model
+    return result
 
   # Индекс неиспользованных в двигателе планет (от большей к меньшей):
   # Название модели в реестре SolarSystem.rbxm - описание
@@ -297,10 +326,13 @@ def planetProcessor(models, renderer):
   X = 0
   planetNames = {"Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Ceres", "Eris"}
   moonNames = {"Earth": ("Moon (Luna)",)}
+  targetNames = ("Sun", "Mercury", "Venus", "Earth", "Moon (Luna)", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Ceres", "Eris")
+  targetNameSet = set(targetNames) # только для print
+
   for node in order:
     group = groups[node]
     name = node["_name"]
-    print("🐾🐾🐕", len(group), name, ("🔥", "✅")[name in planetNames])
+    print("🐾🐾🐕", len(group), name, ("🔥", "✅")[name in targetNameSet])
 
     radius = group[-1].info["size"][0] # с учётом пояса и только X
     if name not in planetNames:
@@ -309,11 +341,6 @@ def planetProcessor(models, renderer):
       X += radius
     else: pos = (0, 0, 0)
 
-    for model in group:
-      if "decal" in model.info:
-        halos.append(model)
-        model._pos = pos
-      else: planetDraws.append(model.draw)
     union = UnionModel(group)
 
     n = len(group) - 1
@@ -324,18 +351,30 @@ def planetProcessor(models, renderer):
     result.append(translated)
     planets[name] = radius, translated
 
+    for model in group:
+      if "decal" in model.info:
+        halos.append(model)
+        model._pos = translated
+      else: planetDraws.append(model.draw)
+
   sunS = planets["Sun"][0]
   step = sunS / sunRadius
   print("step:", step) # Условных единиц длины на одну AU
-  # step /= 10 # Т.к. их СЛИШКОМ много
+  dist_div = 10
+  step /= dist_div # Т.к. их СЛИШКОМ много
   sunPosition = planets["Sun"][1].translate
   day = 0
 
-  target = "Earth"
+  target = "???"
+  targetN = -1
+  changeTarget(1)
   prevTargetPos = None
 
   renderer.camMoveEvent = haloSort
   renderer.recalcPlanetPositions = recalcPlanetPositions
+  renderer.changeTarget = changeTarget
+  renderer.findNearestPlanet = findNearestPlanet
+
   unionM = UnionModel(result)
   unionM.draw = drawer
   return unionM, PBR_unionM, charModelM
@@ -355,6 +394,7 @@ class myRenderer:
     self.fpsS      = "?"
     self.yaw, self.pitch, self.roll = 180, 0, 0
     self.camX, self.camY, self.camZ = 0, 0, -3.5
+    self.camera = 0, 0, -3.5
     self.eventN = 0
     self.time, self.td = time(), 0
     self.moveTd = 0
@@ -363,8 +403,12 @@ class myRenderer:
     self.W = self.H = self.WH_ratio = -1
     self.FBO = None
     self.ready = False
+
     self.camMoveEvent = lambda: None
     self.recalcPlanetPositions = lambda: None
+    self.changeTarget = lambda inc: None
+    self.findNearestPlanet = lambda: None
+    self.lastNearestPlanet = "Sun"
 
     textures = rm.get("drawable/textures")
     skybox_labeled = rm.get("drawable/skybox_labeled")
@@ -384,11 +428,12 @@ class myRenderer:
         arr[pos] = fd
         self.frame_pos = (pos + 1) % 10
       self.fpsS = S = sum(arr) * 10 // len(arr)
-      glyphs = self.glyphs
-      glyphs.setHeight(self.W / 16)
-      glyphs.setColor(0xadddff)
-      glyphs.replace(self.fpsText, 0, self.W - self.H, self.W, "fps: %s" % S)
+      self.glyphs.setText(self.fpsText, "fps: %s" % S, self.W / 16)
     return self.fpsS
+
+  def setTargetText(self, target):
+    runOnGLThread(self.view, lambda:
+      self.glyphs.setText(self.targetText, target, self.W / 12))
 
   def onSurfaceCreated(self, gl10, config):
     self.ready = False
@@ -441,13 +486,12 @@ class myRenderer:
     gridProgram.add(160, 0.25, 5.5,  8, 1)
     gridProgram.add(142, 0.25, 6.75, 8, 2)
     gridProgram.add(45,  6.75, 6.75, 8, 3)
+    gridProgram.setDirection(1)
+    gridProgram.add(70,  2.25, 0.25, 10, 4)
+    gridProgram.add(70,  8.75, 0.25, 10, 5)
 
     self.skyboxN       = 2
     self.currentSkybox = self.skyboxes[self.skyboxN]
-
-    glyphs.setHeight(self.W / 16)
-    glyphs.setColor(0xadddff)
-    self.fpsText = glyphs.add(0, self.W - self.H, self.W, "fps: ?")
 
     # загрузка моделей
 
@@ -498,6 +542,21 @@ class myRenderer:
     self.FBO = newFrameBuffer(width, height)
     self.ready = True
 
+    # настройка glyphs
+
+    glyphs = self.glyphs
+    glyphs.setDirection(1)
+    glyphs.setHeight(self.W / 16)
+    glyphs.setColor(0xadddff)
+    self.fpsText = glyphs.add(0, 0, 1, "fps: ?")
+    glyphs.setHeight(self.W / 8)
+    glyphs.setColor(0x0000ad)
+    glyphs.add(2.375, -0.25, 10, "<-")
+    glyphs.add(8.875, -0.25, 10, "->")
+    glyphs.setColor(0xadffdd)
+    glyphs.setHeight(self.W / 12)
+    self.targetText = glyphs.add(3.375, 0.25, 10, "loading...")
+
   def calcMVPmatrix(self):
     MVPmatrix = self.MVPmatrix
     multiplyMM(MVPmatrix, 0, self.projectionM, 0, self.viewM, 0)
@@ -524,19 +583,25 @@ class myRenderer:
   def eventHandler(self):
     td, event = self.td, self.eventN
     if event in (1, 2):
-      self.moveTd += td
-      if self.moveTd >= 1:
-        self.moveTd2 = min(self.moveTd2 + td, 5)
-
       if event == 2: td = -td
       x, y, z = self.forward
-      td *= 10
-      td *= 3 ** self.moveTd2
 
-      self.camX += x * td
-      self.camY += y * td
-      self.camZ += z * td
-      self.calcViewMatrix()
+      dist = self.findNearestPlanet()
+      if dist is None:
+        self.moveTd += td
+        if self.moveTd >= 1:
+          self.moveTd2 = min(self.moveTd2 + td, 5)
+        td *= 3 ** self.moveTd2
+      else:
+        D, name, radius, model = dist
+        # print(D, name, radius)
+        if D > 10: td *= max(1, min(1.5 ** log2(D - 10), 3 ** 5))
+        if name != self.lastNearestPlanet:
+          self.lastNearestPlanet = name
+          self.changeTarget(name)
+
+      td *= 10
+      self.moveCam(x * td, y * td, z * td)
     else:
       self.moveTd = 0
       self.moveTd2 = max(0, self.moveTd2 - td)
@@ -610,11 +675,13 @@ class myRenderer:
     self.camX = x
     self.camY = y
     self.camZ = z
+    self.camera = x, y, z
     self.calcViewMatrix()
   def moveCam(self, dx, dy, dz):
     self.camX += dx
     self.camY += dy
     self.camZ += dz
+    self.camera = self.camX, self.camY, self.camZ
     self.calcViewMatrix()
 
   def event(self, up, down, misc):
@@ -631,6 +698,7 @@ class myRenderer:
     if t == 3:
       self.skyboxN = N = (self.skyboxN + 1) % len(self.skyboxes)
       self.currentSkybox = self.skyboxes[N]
+    elif t in (4, 5): self.changeTarget(t == 5)
     # print("🐾 click:", x, y, t)
 
   def restart(self):
@@ -639,6 +707,7 @@ class myRenderer:
     self.W = self.H = self.WH_ratio = -1
     self.FBO = None
     SkyBox.restart()
+    self.findNearestPlanet = lambda: None
 
   reverse = {
     "cr": onSurfaceCreated,

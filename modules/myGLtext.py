@@ -260,6 +260,7 @@ class GlyphProgram:
 attribute vec2 vPosition;
 attribute vec2 vUV;
 attribute vec4 vColor;
+attribute float vUp;
 
 uniform float uAspect;
 
@@ -267,7 +268,10 @@ varying vec2 vaUV;
 varying vec4 vaColor;
 
 void main() {
-  gl_Position = vec4(vPosition.x, vPosition.y * uAspect - (1. - uAspect), 0, 1);
+  gl_Position = vec4(vPosition.x,
+    vUp > 0.5 ? vPosition.y * uAspect + (1. - uAspect)
+    : vPosition.y * uAspect - (1. - uAspect),
+  0, 1);
   vaUV = vUV;
   vaColor = vColor;
 }
@@ -283,25 +287,30 @@ void main() {
   vec4 color = texture2D(uTexture, vaUV);
   gl_FragColor = color * vaColor;
 }
-""", ("vPosition", "vUV", "vColor"), ("uTexture", "uAspect")))
+""", ("vPosition", "vUV", "vColor", "vUp"), ("uTexture", "uAspect")))
     vPosition = attribs["vPosition"]
     vUV       = attribs["vUV"]
     vColor    = attribs["vColor"]
+    vUp       = attribs["vUp"]
     def func():
-      glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 8 * 4, 0)
-      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 8 * 4, 2 * 4)
-      glVertexAttribPointer(vColor,    4, GL_FLOAT, False, 8 * 4, 4 * 4)
+      glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 9 * 4, 0)
+      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 9 * 4, 2 * 4)
+      glVertexAttribPointer(vColor,    4, GL_FLOAT, False, 9 * 4, 4 * 4)
+      glVertexAttribPointer(vUp,       1, GL_FLOAT, False, 9 * 4, 8 * 4)
     self.func = func
     self.uTexture = uniforms["uTexture"]
     self.uAspect = uniforms["uAspect"]
     self.models = []
+    self.draws = []
     self.height = 24
     self.color = (0, 0, 0, 1)
     self.printer = True
     self.cache = {}
+    self.dir = 0
 
   def setHeight(self, height):
     self.height = height
+  def setDirection(self, dir): self.dir = dir
 
   def setRGBA(self, r, g, b, a):
     self.color = r / 255, g / 255, b / 255, a / 255
@@ -320,9 +329,14 @@ void main() {
     r, g = divmod(rgb, 256)
     self.color = r / 255, g / 255, b / 255, self.color[3]
 
+  def setText(self, index, text, height = None):
+    posX, posY, L, oldText, self.dir, self.color = self.models[index]
+    if height is not None: self.height = height
+    self.replace(index, posX, posY, L, text)
+
   def create(self, startX, startY, text):
     W = self.renderer.W
-    key = W, self.height, startX, startY, text
+    key = W, self.height, self.dir, startX, startY, text
     try: return self.cache[key]
     except KeyError: pass
 
@@ -362,19 +376,20 @@ void main() {
       x2 = x + (right - left) * mul
       y1 = y - top * mul
       y2 = y - bottom * mul
+      dir = self.dir
       if ord(letter) in emoji:
         VBOextend((
-          x, y1, uv_x, uv_y, 1, 1, 1, A,
-          x, y2, uv_x, uv_y2, 1, 1, 1, A,
-          x2, y1, uv_x2, uv_y, 1, 1, 1, A,
-          x2, y2, uv_x2, uv_y2, 1, 1, 1, A,
+          x,  y1, uv_x,  uv_y,  1, 1, 1, A, dir,
+          x,  y2, uv_x,  uv_y2, 1, 1, 1, A, dir,
+          x2, y1, uv_x2, uv_y,  1, 1, 1, A, dir,
+          x2, y2, uv_x2, uv_y2, 1, 1, 1, A, dir,
         ))
       else:
         VBOextend((
-          x, y1, uv_x, uv_y, R, G, B, A,
-          x, y2, uv_x, uv_y2, R, G, B, A,
-          x2, y1, uv_x2, uv_y, R, G, B, A,
-          x2, y2, uv_x2, uv_y2, R, G, B, A,
+          x,  y1, uv_x,  uv_y,  R, G, B, A, dir,
+          x,  y2, uv_x,  uv_y2, R, G, B, A, dir,
+          x2, y1, uv_x2, uv_y,  R, G, B, A, dir,
+          x2, y2, uv_x2, uv_y2, R, G, B, A, dir,
         ))
       IBOextend((
         step, step + 1, step + 2, step + 1, step + 2, step + 3,
@@ -386,17 +401,20 @@ void main() {
     return model
 
   def replace(self, index, posX, posY, L, text):
+    # print("•", index, posX, posY, L, text, self.dir, self.color, self.height, "•")
+    self.models[index] = posX, posY, L, text, self.dir, self.color
     L /= 2
     L1 = L - 1
     x, y = (posX - L) / L, (posY - L) / -L
-    self.models[index] = self.create(x, y, text)
+    self.draws[index] = self.create(x, y, text).draw
   def add(self, posX, posY, L, text):
     index = len(self.models)
     self.models.append(None)
+    self.draws.append(None)
     self.replace(index, posX, posY, L, text)
     return index
 
-  def draw(self, aspect, customModels = None):
+  def draw(self, aspect, customDraws = None):
     self.aspect = aspect
 
     glDisable(GL_DEPTH_TEST)
@@ -406,8 +424,8 @@ void main() {
     glUniform1i(self.uTexture, 0)
     glBindTexture(GL_TEXTURE_2D, self.texture)
 
-    models = customModels if customModels is not None else self.models
-    for model in models: model.draw()
+    draws = customDraws if customDraws is not None else self.draws
+    for draw in draws: draw()
 
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_CULL_FACE)

@@ -56,3 +56,6 @@ floor = Math._mw_floor(DOUBLE)
 pi = Math._f_PI
 pi2 = pi / 2
 pi180 = pi / 180
+log = Math._mw_log(DOUBLE)
+LOG_2 = log(2)
+log2 = lambda n: log(n) / LOG_2

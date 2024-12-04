@@ -475,6 +475,7 @@ class d2textureProgram():
 attribute vec2 vPosition;
 attribute vec2 vUV;
 attribute float vType;
+attribute float vUp;
 
 uniform float uAspect;
 uniform int uEvent;
@@ -496,7 +497,10 @@ bool getBit(int num, int b) {
 }
 
 void main() {
-  gl_Position = vec4(vPosition.x, vPosition.y * uAspect - (1. - uAspect), 0, 1);
+  gl_Position = vec4(vPosition.x,
+    vUp > 0.5 ? vPosition.y * uAspect + (1. - uAspect)
+    : vPosition.y * uAspect - (1. - uAspect),
+  0, 1);
   vaUV = vUV;
 
   int T = int(vType);
@@ -516,14 +520,16 @@ void main() {
   vec4 clr = texture2D(uTexture, vaUV);
   gl_FragColor = vec4(clr.rgb * X, clr.a);
 }
-""", ('vPosition', 'vUV', 'vType'), ('uTexture', 'uAspect', 'uEvent')))
+""", ('vPosition', 'vUV', 'vType', 'vUp'), ('uTexture', 'uAspect', 'uEvent')))
     vPosition = attribs["vPosition"]
     vUV       = attribs["vUV"]
     vType     = attribs["vType"]
+    vUp       = attribs["vUp"]
     def func():
-      glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 5 * 4, 0)
-      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 5 * 4, 2 * 4)
-      glVertexAttribPointer(vType,     1, GL_FLOAT, False, 5 * 4, 4 * 4)
+      glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 6 * 4, 0)
+      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 6 * 4, 2 * 4)
+      glVertexAttribPointer(vType,     1, GL_FLOAT, False, 6 * 4, 4 * 4)
+      glVertexAttribPointer(vUp,       1, GL_FLOAT, False, 6 * 4, 5 * 4)
     self.func = func
     self.location = None
 
@@ -540,8 +546,10 @@ void main() {
     self.tileSize    = (tW + W - 1) // W, (tH + H - 1) // H
     self.printer = True
     self.up = 0
+    self.dir = 0
 
   def setUp(self, up): self.up = up
+  def setDirection(self, dir): self.dir = dir
 
   def createModel(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
     W, H = self.size
@@ -552,21 +560,22 @@ void main() {
     Lx, Rx, Ly, Ry = x / W, (x + 1) / W, y / H, (y + 1) / H
     if invertX: Lx, Rx = Rx, Lx
     if invertY: Ly, Ry = Ry, Ly
+    dir = self.dir
     return Model((
-      pLx, pLy, Lx, Ly, t,
-      pRx, pLy, Rx, Ly, t,
-      pRx, pRy, Rx, Ry, t,
-      pLx, pRy, Lx, Ry, t,
+      pLx, pLy, Lx, Ly, t, dir,
+      pRx, pLy, Rx, Ly, t, dir,
+      pRx, pRy, Rx, Ry, t, dir,
+      pLx, pRy, Lx, Ry, t, dir,
     ), (
       0, 1, 2, 0, 2, 3,
     ), self, self.printer)
   def replace(self, index, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
     model = self.createModel(id, posX, posY, L, t, invertX, invertY)
-    up = self.up
-    if type(up) in (int, float): upX = upY = up
-    else: upX, upY = up
+    upXY = self.up
+    if type(upXY) in (int, float): upX = upY = upXY
+    else: upX, upY = upXY
     self.models[index] = model
-    self.modelPositions[index] = ((posX - upX) / L, (posX + 1 + upX) / L, (posY - upY) / L, (posY + 1 + upY) / L, t)
+    self.modelPositions[index] = (posX - upX) / L, (posX + 1 + upX) / L, (posY - upY) / L, (posY + 1 + upY) / L, t, self.dir
   def add(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
     index = len(self.models)
     self.models.append(None)
@@ -594,9 +603,12 @@ void main() {
   def checkPosition(self, x, y):
     # x и y от 0 до 1
     aspect = self.aspect
-    y = (y - (1 - aspect)) / aspect
+    yDown = (y - (1 - aspect)) / aspect
+    yUp = y / aspect
+    ys = yDown, yUp
     result = -1
-    for x1, x2, y1, y2, t in self.modelPositions:
+    for x1, x2, y1, y2, t, dir in self.modelPositions:
+      y = ys[dir]
       if x1 <= x and x <= x2 and y1 <= y and y <= y2: result = t
     return result
 
