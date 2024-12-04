@@ -272,8 +272,10 @@ class CharacterModel:
     #bodyTexture = await(VIEW, lambda: textureChain.use((1, 1), (1, 0.95, 0.9, 1)))
     self.models = models2 = []
     self.PBR_models = PBR_models2 = []
+    model_cache = renderer.model_cache
 
-    for node, pos, VBOdata, IBOdata, tex, isBody, info in models:
+    for node, pos, model_data, tex, isBody, info in models:
+      VBOdata, IBOdata, model_name = model_data
       #if isBody: texture = bodyTexture
       #else: # tex всегда есть
       color, texArr = tex
@@ -293,14 +295,24 @@ class CharacterModel:
         if texArr: dbgTextures = texArr[0][0], texture
         useDecal = False
 
-      model = await(VIEW, lambda: Model(VBOdata, IBOdata, program))
+      try: model = model_cache[model_name].clone()
+      except KeyError:
+        model = await(VIEW, lambda: Model(VBOdata, IBOdata, program))
+        model_cache[model_name] = model
       if texture: model = TexturedModel(model, texture)
       # if useDecal: model = NoCullFaceModel(model)
       # print("💥🔥", pos[:])
       model = MatrixModel(model, pos, info)
       models2.append(model if alternativeMode else (node["_id"], model))
 
-    for node, pos, VBOdata, IBOdata, PBR_textures, isBody, info in PBR_models:
+    def newTex(bin):
+      texture = newTexture2(bin)
+      glBindTexture(GL_TEXTURE_2D, texture)
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+      glGenerateMipmap(GL_TEXTURE_2D)
+      return texture
+    for node, pos, model_data, PBR_textures, isBody, info in PBR_models:
+      VBOdata, IBOdata, model_name = model_data
       (r, g, b), colorMap, otherTex = PBR_textures
       if colorMap is None:
         colorMap = await(VIEW, lambda: textureChain.use((1, 1), (r, g, b, 1)))
@@ -308,9 +320,12 @@ class CharacterModel:
         colorMap2 = await(VIEW, lambda: newTexture2(colorMap))
         size = texture2size[colorMap]
         colorMap = await(VIEW, lambda: textureChain.use(size, (0, 0, 0, 1), ((colorMap2, (r, g, b, 1)),), True))
-      metalnessMap, normalMap, roughnessMap = (None if tex is None else await(VIEW, lambda: newTexture2(tex)) for tex in otherTex)
+      metalnessMap, normalMap, roughnessMap = (None if tex is None else await(VIEW, lambda: newTex(tex)) for tex in otherTex)
 
-      model = await(VIEW, lambda: Model(VBOdata, IBOdata, PBR))
+      try: model = model_cache[model_name].clone()
+      except KeyError:
+        model = await(VIEW, lambda: Model(VBOdata, IBOdata, PBR))
+        model_cache[model_name] = model
       model = PBR_Model(model, colorMap, metalnessMap, normalMap, roughnessMap)
       model = MatrixModel(model, pos, info)
       PBR_models2.append(model if alternativeMode else (node["_id"], model))
@@ -839,6 +854,12 @@ void main() {
     glViewport(x, y, w, h)
     glEnable(GL_CULL_FACE)
     glEnable(GL_DEPTH_TEST)
+
+    glBindTexture(GL_TEXTURE_2D, texture)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+    # GL_LINEAR_MIPMAP_LINEAR
+    # GL_NEAREST_MIPMAP_NEAREST
+    glGenerateMipmap(GL_TEXTURE_2D)
 
     return texture
 

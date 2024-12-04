@@ -403,17 +403,13 @@ class myRenderer:
     self.W = self.H = self.WH_ratio = -1
     self.FBO = None
     self.ready = False
+    self.ready2 = False
 
     self.camMoveEvent = lambda: None
     self.recalcPlanetPositions = lambda: None
     self.changeTarget = lambda inc: None
     self.findNearestPlanet = lambda: None
     self.lastNearestPlanet = "Sun"
-
-    textures = rm.get("drawable/textures")
-    skybox_labeled = rm.get("drawable/skybox_labeled")
-    skybox_space = rm.get("drawable/skybox_space")
-    self.texture_base = textures, skybox_labeled, skybox_space
 
   def fps(self):
     T = time()
@@ -436,7 +432,7 @@ class myRenderer:
       self.glyphs.setText(self.targetText, target, self.W / 12))
 
   def onSurfaceCreated(self, gl10, config):
-    self.ready = False
+    self.ready = self.ready2 = False
     print("📽️ onSurfaceCreated", gl10, config)
     self.time, self.td = time(), 0
 
@@ -456,13 +452,12 @@ class myRenderer:
 
     # все негенерированные (из ресурсника) текстуры в одном месте
 
-    textures, skybox_labeled, skybox_space = self.texture_base
-    self.mainTexture = mainTextures = newTexture(ctxResources, textures)
-    skyboxLabeled = newTexture(ctxResources, skybox_labeled)
-    skyboxSpace   = newTexture(ctxResources, skybox_space)
-    print("textures:",       hex(textures),       mainTextures)
-    print("skybox_labeled:", hex(skybox_labeled), skyboxLabeled)
-    print("skybox_space:",   hex(skybox_space),   skyboxSpace)
+    textures = __resource("textures.png")
+    skybox_labeled = __resource("skybox_labeled.png")
+    skybox_space = __resource("skybox_space.webp")
+    self.mainTexture = mainTextures = newTexture2(textures)
+    skyboxLabeled = newTexture2(skybox_labeled)
+    skyboxSpace   = newTexture2(skybox_space)
 
     # все шейдерные программы в одном месте
 
@@ -505,6 +500,7 @@ class myRenderer:
       TexturedModel(TranslateModel(sphere, (0, 3, 0)), fboTex),
     )
 
+    self.model_cache = {}
     if False:
       union, PBR_model, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", None, self)
       SolarSystem = WaitingModel()
@@ -527,8 +523,11 @@ class myRenderer:
     pbr_mat = FLOAT.new_array(16)
     setIdentityM(pbr_mat, 0)
     self.rbxPBRmodel.recalc(pbr_mat)
+    self.ready = True
 
   def onSurfaceChanged(self, gl10, width, height):
+    if not self.ready: return
+
     print("📽️ onSurfaceChanged", gl10, width, height)
     if width == self.W and height == self.H: return
 
@@ -540,7 +539,6 @@ class myRenderer:
 
     if self.FBO is not None: deleteFrameBuffer(self.FBO)
     self.FBO = newFrameBuffer(width, height)
-    self.ready = True
 
     # настройка glyphs
 
@@ -556,6 +554,8 @@ class myRenderer:
     glyphs.setColor(0xadffdd)
     glyphs.setHeight(self.W / 12)
     self.targetText = glyphs.add(3.375, 0.25, 10, "loading...")
+
+    self.ready2 = True
 
   def calcMVPmatrix(self):
     MVPmatrix = self.MVPmatrix
@@ -639,6 +639,8 @@ class myRenderer:
     self.glyphs.draw(self.WH_ratio)
 
   def onDrawFrame(self, gl10):
+    if not self.ready2: return
+
     self.frames += 1
     T = time()
     self.td = T - self.time
@@ -666,7 +668,7 @@ class myRenderer:
     #print("🫢", glGetError())
 
   def move(self, dx, dy):
-    if not self.ready: return
+    if not self.ready2: return
     self.yaw -= dx * 0.5
     self.pitch = max(-90, min(self.pitch - dy * 0.5, 90))
     self.calcViewMatrix()
@@ -688,11 +690,11 @@ class myRenderer:
     self.eventN = up | down << 1 | misc << 2
 
   def getTByPosition(self, x, y):
-    if not self.ready: return -1
+    if not self.ready2: return -1
     return self.gridProgram.checkPosition(x / self.W, y / self.H)
 
   def click(self, x, y, click_td):
-    if not self.ready: return
+    if not self.ready2: return
     if click_td > 0.5: return
     t = self.getTByPosition(x, y)
     if t == 3:
@@ -703,7 +705,7 @@ class myRenderer:
 
   def restart(self):
     print2("~" * 53)
-    self.ready = False
+    self.ready = self.ready2 = False
     self.W = self.H = self.WH_ratio = -1
     self.FBO = None
     SkyBox.restart()
@@ -739,6 +741,15 @@ main_xml = """
 
 class activityHandler:
   def onCreate(self, activity):
+    global HALT
+    def halt(message):
+      try:
+        activity._m_finish()
+        renderer.ready = renderer.ready2 = False
+      except: pass
+      exit(message)
+    HALT = halt
+
     ctx = activity._m_getApplicationContext().cast(Context)
     print("onCreate", self, activity)
 
@@ -848,13 +859,12 @@ class activityHandler:
 
 
 rm = ctxResources = None
+HALT = exit
+# ctxResources пока не используется
 def Activity():
   global rm, ctxResources
   rm = ResourceManager()
   rm.xml("main", "main.xml", main_xml)
-  rm.drawable("textures", "textures.png", __resource("textures.png"))
-  rm.drawable("skybox_labeled", "skybox_labeled.png", __resource("skybox_labeled.png"))
-  rm.drawable("skybox_space", "skybox_space.webp", __resource("skybox_space.webp"))
   #print("•", rm)
   ress = rm.release()
   ctx = ress.ctx
