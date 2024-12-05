@@ -214,3 +214,11 @@ def random_num(digits):
     nn.remove(rand)
     if not nn: return n
   return n
+
+def shuffle(arr): # алгоритм Фишера-Йетса такой малюсенький ;"-}
+  if type(arr) is not list: arr = list(arr)
+  L1 = len(arr) - 1
+  for i in range(L1):
+    i2 = randint(i + 1, L1)
+    arr[i], arr[i2] = arr[i2], arr[i]
+  return arr

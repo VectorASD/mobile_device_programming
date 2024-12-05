@@ -158,8 +158,9 @@ glTexImage2D = GLES20._mw_glTexImage2D(int, int, int, int, int, int, int, int, N
 glReadPixels = GLES20._mw_glReadPixels(int, int, int, int, int, int, NIOBuffer) # x, y, width, height, format, type, pixels
 glTexParameterf = GLES20._mw_glTexParameterf(int, int, float) # target, pname, param
 glTexParameterfv = GLES20._mw_glTexParameterfv(int, int, FLOATarr, int) # target, pname, params, offset
-glTexParameteri = GLES20._mw_glTexParameteri(int, int, int)
+glTexParameteri = GLES20._mw_glTexParameteri(int, int, int) # target, pname, param
 glTexParameteriv = GLES20._mw_glTexParameteriv(int, int, INTarr, int) # target, pname, params, offset
+glGenerateMipmap = GLES20._mw_glGenerateMipmap(int) # target
 GL_TEXTURE_2D = GLES20._f_GL_TEXTURE_2D
 GL_TEXTURE_CUBE_MAP = GLES20._f_GL_TEXTURE_CUBE_MAP
 GL_TEXTURE_CUBE_MAP_TARGETS = GLES20._f_GL_TEXTURE_CUBE_MAP_POSITIVE_X, GLES20._f_GL_TEXTURE_CUBE_MAP_NEGATIVE_X, GLES20._f_GL_TEXTURE_CUBE_MAP_POSITIVE_Y, GLES20._f_GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, GLES20._f_GL_TEXTURE_CUBE_MAP_POSITIVE_Z, GLES20._f_GL_TEXTURE_CUBE_MAP_NEGATIVE_Z
@@ -170,6 +171,7 @@ GL_TEXTURE_WRAP_T = GLES20._f_GL_TEXTURE_WRAP_T
 # GL_TEXTURE_WRAP_R = GLES20._f_GL_TEXTURE_WRAP_R опять OpenGL ES...
 GL_NEAREST = GLES20._f_GL_NEAREST # фильтр ближайшено соседа, как в майнкрафте, как нам и надо ;"-}
 GL_LINEAR = GLES20._f_GL_LINEAR # линейная фильтрация (мыло)
+GL_LINEAR_MIPMAP_LINEAR = GLES20._f_GL_LINEAR_MIPMAP_LINEAR
 GL_NEAREST_MIPMAP_NEAREST = GLES20._f_GL_NEAREST_MIPMAP_NEAREST
 GL_LINEAR_MIPMAP_NEAREST = GLES20._f_GL_LINEAR_MIPMAP_NEAREST
 GL_NEAREST_MIPMAP_LINEAR = GLES20._f_GL_NEAREST_MIPMAP_LINEAR
@@ -253,6 +255,7 @@ def newProgram(vCode, fCode, attribs, uniforms):
   if type(fShader) is str: return "Ошибка компиляции F-шейдера: " + fShader
 
   print2("✅ OK shaders:", vShader, fShader)
+  if not vShader or not fShader: HALT("Это не GL-поток")
 
   program = glCreateProgram()
   glAttachShader(program, vShader)
@@ -297,6 +300,7 @@ def checkProgram(program):
     exit()
   if len(program) == 1: program = program[0]
   print2("✅ OK shader program:", program)
+  if not program: HALT("Это не GL-поток")
   return program
 
 prevLocs = None
@@ -358,6 +362,7 @@ def _newTexture(bitmap, filter):
   glBindTexture(GL_TEXTURE_2D, 0)
 
   print2("✅ OK texture:", textureId)
+  if not textureId: HALT("Это не GL-поток")
   return textureId
 
 def newTexture(ctxResources, resId):
@@ -403,6 +408,7 @@ def newFrameBuffer(width, height, depthTest = True, oldFBO = None, filter = GL_N
   if depthTest: glGenRenderbuffers(1, arr, 2)
   # glGenRenderbuffers(1, arr, 3)
   fbo, textureId, rbo = arr
+  if not fbo or not textureId or depthTest and not rbo: HALT("Это не GL-поток (newFrameBuffer: %s %s %s)" % tuple(arr))
   texture2size[textureId] = width, height
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo)

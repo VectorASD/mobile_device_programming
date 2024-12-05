@@ -192,8 +192,10 @@ def modelHandler(root):
       # print(shape, shapeName)
       model = getCube()
       if shape != 1: exit("Пока поддерживается только форма Block")
+      model_name = "cube"
     else:
-      model = mesh2model(checkString(props["MeshId"]))
+      model_name = checkString(props["MeshId"])
+      model = mesh2model(model_name)
       if model is None: return
     VBOdata, IBOdata = model
 
@@ -207,6 +209,7 @@ def modelHandler(root):
       # print("•", len(texture), texture[:32], face, (r, g, b, 1 - a))
       info["decal"] = texture, face, (r, g, b, 1 - a)
 
+    model_data = VBOdata, IBOdata, model_name
     SA = getSurfaceAppearance(node)
     if SA:
       if isPart: exit("Пока не поддерживается Part + SA :/")
@@ -217,7 +220,7 @@ def modelHandler(root):
       normalMap = cdnLoader(checkString(SA_props["NormalMap"]))
       roughnessMap = cdnLoader(checkString(SA_props["RoughnessMap"]))
       PBR_textures = color, colorMap, (metalnessMap, normalMap, roughnessMap)
-      result = node, pos, VBOdata, IBOdata, PBR_textures, isBody, info
+      tex = PBR_textures
     else:
       r, g, b = checkColor3uint8(props["Color3uint8"])
       a = checkFloat32(props["Transparency"])
@@ -225,11 +228,11 @@ def modelHandler(root):
       #texture = ((texture, (1, 1, 1, 1)),) if texture else ()
       #tex = (r / 255, g / 255, b / 255, 0), texture
       if texture:
-        texture = ((texture, (1, 1, 1, 1 - a)),)
-        tex = (0, 0, 0, 0), texture
+        texture = texture, (1, 1, 1, 1 - a)
+        tex = (0, 0, 0, 0), (texture,)
       else: tex = (r / 255, g / 255, b / 255, 1 - a), ()
-      result = node, pos, VBOdata, IBOdata, tex, isBody, info
 
+    result = node, pos, model_data, tex, isBody, info
     return SA, result
 
   def recurs(node, root_pos):
