@@ -303,6 +303,15 @@ def planetProcessor(models, renderer):
   # Deimos - спутник Марса
   # Halley's comet - Комета Галлея (официальное название 1P/Halley) — яркая короткопериодическая комета, возвращающаяся к Солнцу каждые 75–76 лет. Названа в честь английского астронома Эдмунда Галлея. С кометой связаны метеорные потоки эта-Аквариды и Ориониды
 
+  def clickHandler(models, data):
+    renderer.setClickHandler(models, lambda: clickByPlanet(data))
+  def clickByPlanet(data):
+    name, radius, translated = data
+    if name != target:
+      changeTarget(name)
+      return
+    print("planet!", data)
+
   unionM, PBR_unionM, charModelM = models
   #     unionM.type = UnionModel
   # PBR_unionM.type = UnionModel
@@ -355,7 +364,9 @@ def planetProcessor(models, renderer):
       if "decal" in model.info:
         halos.append(model)
         model._pos = translated
-      else: planetDraws.append(model.draw)
+      else: planetDraws.append(model.draw)    
+
+    clickHandler(group[:n+1], (name, radius, translated))
 
   sunS = planets["Sun"][0]
   step = sunS / sunRadius
@@ -405,6 +416,9 @@ class myRenderer:
     self.ready = False
     self.ready2 = False
 
+    self.colorDimension = False
+    self.clickHandlerQueue = []
+
     self.camMoveEvent = lambda: None
     self.recalcPlanetPositions = lambda: None
     self.changeTarget = lambda inc: None
@@ -435,6 +449,7 @@ class myRenderer:
     self.ready = self.ready2 = False
     print("📽️ onSurfaceCreated", gl10, config)
     self.time, self.td = time(), 0
+    self.clickHandlerQueue.clear()
 
     # основные настройки по умолчанию
 
@@ -474,6 +489,7 @@ class myRenderer:
     self.noPBR = NoPBR(self)
     self.glyphs = glyphs = glyphTextureGenerator(self)
     glyphs.printer = False
+    self.colorama = Colorama(self)
 
     # настройка шейдерных программ
 
@@ -606,6 +622,21 @@ class myRenderer:
       self.moveTd = 0
       self.moveTd2 = max(0, self.moveTd2 - td)
 
+  def drawColorDimension(self):
+    glClearColor(0, 0, 0, 1)
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+    glEnable(GL_CULL_FACE)
+    glEnable(GL_DEPTH_TEST)
+    self.colorama.draw(self.SolarSystem)
+  def readPixel(self, x, y):
+    buffer = MyBuffer.allocateDirect(4)
+    buffer._m_order(MyBuffer.nativeOrder)
+    glReadPixels(round(x), round(y), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, buffer)
+    arr = BYTE.new_array(buffer._m_remaining())
+    buffer._m_get(arr)
+    return (i & 255 for i in arr)
+
   def drawScene(self):
     # glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glClear(GL_DEPTH_BUFFER_BIT)
@@ -633,6 +664,7 @@ class myRenderer:
     enableProgram(program.program)
     for model in self.models: model.draw()
 
+    enableProgram(self.noPBR.program)
     self.SolarSystem.draw()
 
     self.gridProgram.draw(self.WH_ratio, self.eventN)
@@ -661,6 +693,14 @@ class myRenderer:
     if self.updMVP: self.calcMVPmatrix()
 
     glBindFramebuffer(GL_FRAMEBUFFER, self.FBO[0])
+    queue = self.clickHandlerQueue
+    if queue:
+      self.drawColorDimension()
+      for x, y in queue:
+        rgba = self.readPixel(x, self.H - y)
+        cb = self.colorama.to_n(rgba)
+        if cb is not None: cb()
+      self.clickHandlerQueue.clear()
     self.drawScene()
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
@@ -697,11 +737,18 @@ class myRenderer:
     if not self.ready2: return
     if click_td > 0.5: return
     t = self.getTByPosition(x, y)
-    if t == 3:
+    if t == -1:
+      self.clickHandlerQueue.append((x, y))
+    elif t == 3:
       self.skyboxN = N = (self.skyboxN + 1) % len(self.skyboxes)
       self.currentSkybox = self.skyboxes[N]
     elif t in (4, 5): self.changeTarget(t == 5)
     # print("🐾 click:", x, y, t)
+
+  def setClickHandler(self, models, cb):
+    color = self.colorama.next(cb)
+    for model in models:
+      model.setColor(color)
 
   def restart(self):
     print2("~" * 53)

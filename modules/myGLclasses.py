@@ -5,7 +5,8 @@ import myGL
 class Model:
   type = "Model"
   def __init__(self, VBOdata, IBOdata = None, shaderProgram = None, printer = True):
-    if IBOdata is None and len(VBOdata) == 4:
+    self.colorama_func = None
+    if IBOdata is None and len(VBOdata) == 5:
       self.data = VBOdata
       self.matrix = None
       return
@@ -30,19 +31,25 @@ class Model:
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
     if printer: print2("✅ OK buffers:", VBO, IBO, "(%s, %s words)" % sizes)
-    self.data = VBO, IBO, IBOdata.capacity(), shaderProgram
+    self.data = VBO, IBO, IBOdata.capacity(), shaderProgram, shaderProgram.renderer
     self.matrix = None
 
   def recalc(self, mat):
     self.matrix = mat
 
   def draw(self):
-    VBO, IBO, indexes, shaderProgram = self.data
+    VBO, IBO, indexes, shaderProgram, renderer = self.data
 
     glBindBuffer(GL_ARRAY_BUFFER, VBO)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO)
 
-    shaderProgram.func()
+    if renderer.colorDimension:
+      colorama_func = self.colorama_func
+      if colorama_func:
+        colorama_func()
+        shaderProgram = renderer.colorama
+      else: return
+    else: shaderProgram.func()
 
     mat = self.matrix
     if mat is not None:
@@ -66,6 +73,11 @@ class Model:
   
   def clone(self):
     return Model(self.data)
+
+  def setColor(self, color):
+    renderer = self.data[4]
+    func = renderer.colorama.func
+    self.colorama_func = lambda: func(color)
 
 
 
@@ -100,6 +112,7 @@ class TranslateModel:
     self.translate = translate
     self.draw = model.draw
     self.delete = model.delete
+    self.setColor = model.setColor
 
   def recalc(self, mat):
     self.mat = mat
@@ -126,6 +139,7 @@ class ScaleModel:
     self.scale = scale
     self.draw = model.draw
     self.delete = model.delete
+    self.setColor = model.setColor
 
   def recalc(self, mat):
     self.mat = mat
@@ -152,6 +166,7 @@ class RotateModel:
     self.YPR = YPR
     self.draw = model.draw
     self.delete = model.delete
+    self.setColor = model.setColor
 
   def recalc(self, mat):
     self.mat = mat
@@ -185,6 +200,7 @@ class MatrixModel:
     self.info = info
     self.draw = model.draw
     self.delete = model.delete
+    self.setColor = model.setColor
 
   def recalc(self, mat):
     sMat = FLOAT.new_array(16)
@@ -216,6 +232,9 @@ class UnionModel:
     models = tuple(models.copy() if type(models) is list else models)
     return UnionModel(models)
 
+  def setColor(self, color):
+    for model in self.models: model.setColor(color)
+
 
 
 class TexturedModel:
@@ -225,6 +244,7 @@ class TexturedModel:
     self.textureID = textureID
     self.delete = model.delete
     self.recalc = model.recalc
+    self.setColor = model.setColor
 
   def draw(self):
     texture = self.textureID
@@ -243,6 +263,7 @@ class NoCullFaceModel:
     self.model = model
     self.delete = model.delete
     self.recalc = model.recalc
+    self.setColor = model.setColor
 
   def draw(self):
     glDisable(GL_CULL_FACE)
@@ -402,6 +423,7 @@ class WaitingModel:
     self.model = None
     self.draw = lambda: None
     self.needDelete = False
+    self.saved_color = None
   def setModel(self, model):
     # print("SET MODEL:", model)
     self.model = model
@@ -422,9 +444,15 @@ class WaitingModel:
     else:
       self.recalc = model.recalc
       self.draw = model.draw
+      self.setColor = model.setColor
+      color = self.saved_color
+      if color is not None: self.setColor(color)
 
   def delete(self): # если удалили модель до того, как она загрузилась :/
     self.needDelete = True
+
+  def setColor(self, color):
+    self.saved_color = color
 
 
 
@@ -654,9 +682,9 @@ class SkyBox:
 
     glBindTexture(GL_TEXTURE_CUBE_MAP, 0)
     print2("✅ OK cube map texture:", textureId)
+    self.renderer = renderer
     self.genProgram()
     self.genModel()
-    self.renderer = renderer
 
   def genProgram(self):
     if SkyBox.program is None:
@@ -774,10 +802,10 @@ GL_LESS = GLES20._f_GL_LESS
 
 class TextureChain:
   def __init__(self, renderer):
+    self.renderer = renderer
     self.genProgram()
     self.genModel()
     self.FBO = None
-    self.renderer = renderer
 
   def genProgram(self):
     self.program = _, attribs, uniforms = checkProgram(newProgram("""
@@ -1087,7 +1115,7 @@ uniform sampler2D uTexture;
 varying vec2 vaUV;
 
 void main() {
-  gl_FragColor = texture2D(uTexture, vaUV).rgba;
+  gl_FragColor = texture2D(uTexture, vaUV);
 }
 """, ('vPosition', 'vUV'), ('uMVPMatrix', 'uTexture')))
     uMVPMatrix    = uniforms["uMVPMatrix"]
@@ -1101,6 +1129,66 @@ void main() {
     self.func = func
     self.renderer = renderer
     self.location = uMVPMatrix
+
+
+
+class Colorama:
+  def __init__(self, renderer):
+    self.R = tuple(shuffle(range(256)))
+    self.G = tuple(shuffle(range(256)))
+    self.B = tuple(shuffle(range(256)))
+    self.n = 0
+    self.reverse = {}
+    self.renderer = renderer
+    self.genProgram()
+  def next(self, cb):
+    n = self.n
+    self.n += 1
+    r = self.R[sum((n >> i * 3 & 1) << i for i in range(8))]
+    g = self.G[sum((n >> i * 3 + 1 & 1) << i for i in range(8))]
+    b = self.B[sum((n >> i * 3 + 2 & 1) << i for i in range(8))]
+    if not (r | g | b): return self.next()
+    color = r / 255, g / 255, b / 255
+    self.reverse[color] = cb
+    return color
+  def to_n(self, rgba):
+    r, g, b, a = rgba
+    color = r / 255, g / 255, b / 255
+    return self.reverse.get(color, None)
+  def genProgram(self):
+    self.program = _, attribs, uniforms = checkProgram(newProgram("""
+attribute vec3 vPosition;
+uniform mat4 uMVPMatrix;
+
+void main() {
+  gl_Position = uMVPMatrix * vec4(vPosition.xyz, 1);
+}
+""", """
+precision mediump float;
+uniform vec3 uColor;
+
+void main() {
+  gl_FragColor = vec4(uColor, 1.);
+}
+""", ('vPosition',), ('uMVPMatrix', 'uColor')))
+    uMVPMatrix = uniforms["uMVPMatrix"]
+    uColor = uniforms["uColor"]
+    vPosition = attribs["vPosition"]
+    def func(color):
+      r, g, b = color
+      glUniform3f(uColor, r, g, b)
+      glVertexAttribPointer(vPosition, 3, GL_FLOAT, False, 12 * 4, 0)
+      #glVertexAttribPointer(a["vNormal"], 3, GL_FLOAT, False, 12 * 4, 3 * 4)
+      #glVertexAttribPointer(a["vUV"],       2, GL_FLOAT, False, 12 * 4, 6 * 4)
+      #glVertexAttribPointer(a["vTangent"], 4, GL_FLOAT, False, 12 * 4, 8 * 4)
+    self.func = func
+    self.location = uMVPMatrix
+  def draw(self, model):
+    renderer = self.renderer
+    renderer.colorDimension = True
+    enableProgram(self.program)
+    model.draw()
+    renderer.colorDimension = False
 
 
 
