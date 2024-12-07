@@ -85,21 +85,21 @@ def buildModel(faces):
   VBOdata = []
   VBOdict = {}
   IBOdata = []
-  VBOapp = VBOdata.append
+  VBOextend = VBOdata.extend
   IBOextend = IBOdata.extend
   for xyz, xyz2, xyz3 in faces:
     try: index = VBOdict[xyz]
     except KeyError:
-      index = VBOdict[xyz] = len(VBOdata)
-      VBOapp(xyz)
+      index = VBOdict[xyz] = len(VBOdict)
+      VBOextend(xyz)
     try: index2 = VBOdict[xyz2]
     except KeyError:
-      index2 = VBOdict[xyz2] = len(VBOdata)
-      VBOapp(xyz2)
+      index2 = VBOdict[xyz2] = len(VBOdict)
+      VBOextend(xyz2)
     try: index3 = VBOdict[xyz3]
     except KeyError:
-      index3 = VBOdict[xyz3] = len(VBOdata)
-      VBOapp(xyz3)
+      index3 = VBOdict[xyz3] = len(VBOdict)
+      VBOextend(xyz3)
     IBOextend((index, index2, index3))
   return VBOdata, IBOdata
 
@@ -321,6 +321,7 @@ class CharacterModel:
         model = await(VIEW, lambda: Model(VBOdata, IBOdata, program))
         model_cache[model_name] = model
       if texture: model = TexturedModel(model, texture)
+      # model = PBR_Model(model, texture, None, None, None)
       # if useDecal: model = NoCullFaceModel(model)
       # print("💥🔥", pos[:])
       model = MatrixModel(model, pos, info)
@@ -981,6 +982,7 @@ void main() {
   if (vTangent.w < 0.) B = -B;
 
   mat3 TBN = transpose(mat3(T, B, N));
+
   vaTangentLightPos = TBN * uLightPos;
   vaTangentViewPos = TBN * uCamPos;
   vaTangentFragPos = TBN * fragPos;
@@ -1010,7 +1012,7 @@ void main() {
   normal = uUseNormalMap ? normalize(normal * 2.0 - 1.0) : vaNormal;
 
   vec3 color = texture2D(uAlbedoMap, vaUV).rgb;
-
+  // ambient
   vec3 ambient = 0.1 * color;
   // diffuse
   vec3 lightDir = normalize(vaTangentLightPos - vaTangentFragPos);
@@ -1068,8 +1070,11 @@ class PBR_Model:
 
   def __init__(self, model, colorMap, metalnessMap, normalMap, roughnessMap):
     self.model = model
-    self.textures = colorMap, metalnessMap, normalMap, roughnessMap
+    if type(colorMap) is tuple and len(colorMap) == 4: self.textures = colorMap # clone
+    else: self.textures = colorMap, metalnessMap, normalMap, roughnessMap
     self.recalc = model.recalc
+    self.delete = model.delete
+    self.setColor = model.setColor
 
   def draw(self):
     pbr = PBR_Model.PBR
@@ -1088,8 +1093,7 @@ class PBR_Model:
 
     glActiveTexture(GL_TEXTURE0) # только в PBR используются текстурные блоки/слоты, так что возвращаем всё на свои места!
 
-  def delete(self): self.model.delete()
-  def clone(self): return self.model.clone()
+  def clone(self): return PBR_Model(self.model.clone(), self.textures)
 
 
 
@@ -1097,38 +1101,104 @@ class NoPBR:
   def __init__(self, renderer):
     self.program = _, attribs, uniforms = checkProgram(newProgram("""
 attribute vec3 vPosition;
-//attribute vec3 vNormal;
+attribute vec3 vNormal;
 attribute vec2 vUV;
-//attribute vec4 vTangent;
+// attribute vec4 vTangent;
 
-uniform mat4 uMVPMatrix;
+uniform mat4 uVPMatrix;
+uniform mat4 uModelM;
+uniform mat4 uInvModelM;
+uniform vec3 uCamPos;
 
 varying vec2 vaUV;
+varying vec3 vaNormal;
+varying vec3 vaViewPos;
+varying vec3 vaFragPos;
 
 void main() {
-  gl_Position = uMVPMatrix * vec4(vPosition.xyz, 1);
+  vec3 fragPos = vec3(uModelM * vec4(vPosition, 1.0));
+
+  mat3 normalMatrix = mat3(uInvModelM);
+  vec3 N = normalize(normalMatrix * vNormal);
+
   vaUV = vUV;
+  vaNormal = N;
+  vaViewPos = uCamPos;
+  vaFragPos = fragPos;
+
+  gl_Position = uVPMatrix * uModelM * vec4(vPosition, 1);
 }
 """, """
-precision mediump float;
-uniform sampler2D uTexture;
+precision highp float;
+
 varying vec2 vaUV;
+varying vec3 vaNormal;
+varying vec3 vaViewPos;
+varying vec3 vaFragPos;
+
+uniform sampler2D uTexture;
+uniform vec3 uLightPos;
+uniform bool uLightSource;
 
 void main() {
-  gl_FragColor = texture2D(uTexture, vaUV);
+  vec3 normal = vaNormal;
+  // gl_FragColor = texture2D(uTexture, vaUV);
+  vec4 rgba = texture2D(uTexture, vaUV);
+  vec3 color = rgba.rgb;
+  // ambient
+  vec3 ambient = 0.03 * color;
+  // diffuse
+  vec3 lightDir = normalize(uLightPos - vaFragPos);
+  if (uLightSource) lightDir = -lightDir;
+  float diff = max(dot(lightDir, normal), 0.0);
+  vec3 diffuse = diff * color;
+  // specular
+  vec3 viewDir = normalize(vaViewPos - vaFragPos);
+  float spec = 0.0;
+  // if (blinn) {
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    spec = pow(max(dot(normal, halfwayDir), 0.0), 32.0);
+  /* } else {
+    vec3 reflectDir = reflect(-lightDir, normal);
+    spec = pow(max(dot(viewDir, reflectDir), 0.0), 8.0);
+  } */
+  vec3 specular = vec3(0.8) * spec;
+  color = ambient + diffuse + specular;
+  color = color / (color + vec3(1.)); // тональная компрессия
+  color = pow(color, vec3(1. / 2.2)); // гамма-коррекция
+  // color = color * 0.01 + spec * 0.99;
+
+  gl_FragColor = vec4(color, rgba.a);
 }
-""", ('vPosition', 'vUV'), ('uMVPMatrix', 'uTexture')))
-    uMVPMatrix    = uniforms["uMVPMatrix"]
+""", ('vPosition', 'vNormal', 'vUV'), ('uVPMatrix', 'uModelM', 'uInvModelM', 'uCamPos', 'uLightPos', 'uTexture', 'uLightSource')))
+    self.uVPMatrix = uniforms["uVPMatrix"]
+    uModelM = uniforms["uModelM"]
+    uInvModelM = uniforms["uInvModelM"]
+    self.uCamPos = uniforms["uCamPos"]
+    self.uLightPos = uniforms["uLightPos"]
     self.uTexture = uniforms["uTexture"]
+    self.uLightSource = uniforms["uLightSource"]
+    attribs = attribs["vPosition"], attribs["vNormal"], attribs["vUV"]
     def func():
-      a = attribs # nonlocal to local
-      glVertexAttribPointer(a["vPosition"], 3, GL_FLOAT, False, 12 * 4, 0)
-      #glVertexAttribPointer(a["vNormal"], 3, GL_FLOAT, False, 12 * 4, 3 * 4)
-      glVertexAttribPointer(a["vUV"],       2, GL_FLOAT, False, 12 * 4, 6 * 4)
-      #glVertexAttribPointer(a["vTangent"], 4, GL_FLOAT, False, 12 * 4, 8 * 4)
+      vPosition, vNormal, vUV = attribs
+      glVertexAttribPointer(vPosition, 3, GL_FLOAT, False, 12 * 4, 0)
+      glVertexAttribPointer(vNormal, 3, GL_FLOAT, False, 12 * 4, 3 * 4)
+      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 12 * 4, 6 * 4)
+      # glVertexAttribPointer(vTangent, 4, GL_FLOAT, False, 12 * 4, 8 * 4)
     self.func = func
     self.renderer = renderer
-    self.location = uMVPMatrix
+    self.location = uModelM, uInvModelM
+  def draw(self, model):
+    enableProgram(self.program)
+
+    renderer = self.renderer
+    camX, camY, camZ = renderer.camera
+    lightX, lightY, lightZ = renderer.lightPos
+    glUniform3f(self.uCamPos, camX, camY, camZ)
+    glUniform3f(self.uLightPos, lightX, lightY, lightZ)
+    glUniformMatrix4fv(self.uVPMatrix, 1, False, renderer.MVPmatrix, 0)
+    glUniform1i(self.uLightSource, 0)
+    model.draw()
 
 
 

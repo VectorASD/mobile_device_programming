@@ -139,11 +139,12 @@ def figures(shaderProgram):
   VBOdata, IBOdata = buildModel(faces)
   VBOdata2 = []
   VBOextend = VBOdata2.extend
-  for n in range(len(VBOdata)):
-    x, y, z, U, V = VBOdata[n]
+  for n in range(0, len(VBOdata), 5):
+    x, y, z, U, V = VBOdata[n : n + 5]
     L = (x * x + y * y + z * z) ** 0.5
     # r, g, b = (sin(n * 3) + 2) / 3, (sin(n * 4) + 2) / 3, (sin(n * 5) + 2) / 3
-    L = 1 / L * 0.5 + L * 0.5
+    # L = 1 / L * 0.5 + L * 0.5
+    L = 1 / L
     VBOextend((x / L, y / L, z / L, 0, 0, 0, 0, (U + 1) / 2, (V + 1) / 2))
   sphere = Model(VBOdata2, IBOdata, shaderProgram)
   return triangles, cube, sphere
@@ -204,15 +205,15 @@ def planetProcessor(models, renderer):
 
     radius, model = planets[target]
     x, y, z = model.translate
-    if prevTargetPos:
+    if prevTargetPos is None:
+      fx, fy, fz = renderer.forward
+      r = radius * 2.5
+      renderer.setCamPos(x - fx * r, y - fy * r, z - fz * r)
+    elif type(prevTargetPos) is not int:
       px, py, pz = prevTargetPos
       dx, dy, dz = x - px, y - py, z - pz
       if dx or dy or dz:
         renderer.moveCam(dx, dy, dz)
-    else:
-      fx, fy, fz = renderer.forward
-      r = radius * 2.5
-      renderer.setCamPos(x - fx * r, y - fy * r, z - fz * r)
     prevTargetPos = x, y, z
 
     # step = (sunS / sunRadius) / max(1, 10 - day / 2)
@@ -311,6 +312,26 @@ def planetProcessor(models, renderer):
       changeTarget(name)
       return
     print("planet!", data)
+    if name in selectedPlanets: selectedPlanets.remove(name)
+    else: selectedPlanets.add(name)
+    for name in selectedPlanets:
+      radius, model = planets[name]
+      x, y, z = model.translate
+      pos = (x, y, z, 1)._a_float
+      pos2d = FLOAT.new_array(4)
+      multiplyMV(pos2d, 0, renderer.MVPmatrix, 0, pos, 0)
+      x, y, z, w = pos2d
+      x /= w
+      y /= w
+      z /= w
+      print("👣", name, x, y, z)
+  def SunDraw(origDraw):
+    def draw():
+      glUniform1i(uLightSource, 1)
+      origDraw()
+      glUniform1i(uLightSource, 0)
+    uLightSource = renderer.noPBR.uLightSource
+    return draw
 
   unionM, PBR_unionM, charModelM = models
   #     unionM.type = UnionModel
@@ -364,7 +385,10 @@ def planetProcessor(models, renderer):
       if "decal" in model.info:
         halos.append(model)
         model._pos = translated
-      else: planetDraws.append(model.draw)    
+      else:
+        draw = model.draw
+        if name == "Sun": draw = SunDraw(draw)
+        planetDraws.append(draw)
 
     clickHandler(group[:n+1], (name, radius, translated))
 
@@ -374,12 +398,14 @@ def planetProcessor(models, renderer):
   dist_div = 10
   step /= dist_div # Т.к. их СЛИШКОМ много
   sunPosition = planets["Sun"][1].translate
-  day = 0
+  renderer.lightPos = sunPosition
+  day = 0  
 
   target = "???"
   targetN = -1
   changeTarget(1)
-  prevTargetPos = None
+  prevTargetPos = 0
+  selectedPlanets = set()
 
   renderer.camMoveEvent = haloSort
   renderer.recalcPlanetPositions = recalcPlanetPositions
@@ -418,6 +444,7 @@ class myRenderer:
 
     self.colorDimension = False
     self.clickHandlerQueue = []
+    self.lightPos = 0, 3, 0
 
     self.camMoveEvent = lambda: None
     self.recalcPlanetPositions = lambda: None
@@ -539,6 +566,7 @@ class myRenderer:
     pbr_mat = FLOAT.new_array(16)
     setIdentityM(pbr_mat, 0)
     self.rbxPBRmodel.recalc(pbr_mat)
+    self.SolarSystem.recalc(pbr_mat)
     self.ready = True
 
   def onSurfaceChanged(self, gl10, width, height):
@@ -577,13 +605,12 @@ class myRenderer:
     MVPmatrix = self.MVPmatrix
     multiplyMM(MVPmatrix, 0, self.projectionM, 0, self.viewM, 0)
     # print("MVP:", self.MVPmatrix[:])
-    multiplyMM(self.VPmatrix, 0, self.projectionM, 0, self.viewNotTranslatedM, 0)
+    multiplyMM(self.VPmatrix,  0, self.projectionM, 0, self.viewNotTranslatedM, 0)
     self.updMVP = False
 
     for model in self.models: model.recalc(MVPmatrix)
     self.rbxModel.recalc(MVPmatrix)
     if self.character: self.character.recalc(MVPmatrix)
-    self.SolarSystem.recalc(MVPmatrix)
 
   def calcViewMatrix(self):
     q = Quaternion.fromYPR(self.yaw, self.pitch, self.roll)
@@ -664,8 +691,8 @@ class myRenderer:
     enableProgram(program.program)
     for model in self.models: model.draw()
 
-    enableProgram(self.noPBR.program)
-    self.SolarSystem.draw()
+    self.noPBR.draw(self.SolarSystem)
+    # self.pbr.draw(self.SolarSystem)
 
     self.gridProgram.draw(self.WH_ratio, self.eventN)
     self.glyphs.draw(self.WH_ratio)
