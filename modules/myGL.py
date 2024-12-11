@@ -152,6 +152,9 @@ scaleM2 = Matrix._mw_scaleM(FLOATarr, int, FLOATarr, int, float, float, float) #
 rotateM = Matrix._mw_rotateM(FLOATarr, int, float, float, float, float) # m, mOffset, a (in deg), x, y, z
 rotateM2 = Matrix._mw_rotateM(FLOATarr, int, FLOATarr, int, float, float, float, float) # rm, rmOffset, m, mOffset, a (in deg), x, y, z
 
+identity_mat = FLOAT.new_array(16)
+setIdentityM(identity_mat, 0)
+
 
 
 glTexImage2D = GLES20._mw_glTexImage2D(int, int, int, int, int, int, int, int, NIOBuffer) # target, level, internalformat, width, height, border, format, type, pixels
@@ -400,7 +403,7 @@ def checkFrameBuffer(print):
     print2("💥 FBO error:", status, "(%s)" % GL_errors.get(status, "?"))
   elif print: print2("✅ FBO ok")
 
-def newFrameBuffer(width, height, depthTest = True, oldFBO = None, filter = GL_NEAREST):
+def newFrameBuffer(width, height, depthTest = False, oldFBO = None, filter = GL_NEAREST):
   arr = INT.new_array(3)
   if oldFBO is None: glGenFramebuffers(1, arr, 0)
   else: arr[0] = oldFBO
@@ -448,6 +451,6 @@ def deleteFrameBuffer(arr):
   texture2size[textureId] = -1, -1
   depthTest = rbo > 0
   glDeleteFramebuffers(1, arr, 0)
-  glDeleteTextures(1, arr, 1)
+  if textureId: glDeleteTextures(1, arr, 1)
   if depthTest: glDeleteRenderbuffers(1, arr, 2)
-  print2("♻️ FBO:", fbo, textureId, rbo if depthTest else "x")
+  print2("♻️ FBO:", fbo, textureId if textureId else "x", rbo if depthTest else "x")
