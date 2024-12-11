@@ -184,6 +184,9 @@ def planetProcessor(models, renderer):
     glDepthMask(True)
   def recalcPlanetPositions():
     nonlocal day, prevTargetPos
+
+    updateIcons()
+
     SunX, SunY, SunZ = sunPosition
     positions = planetPositions(day)
     for name in planetNames:
@@ -232,15 +235,14 @@ def planetProcessor(models, renderer):
       prevTargetPos = None
     renderer.setTargetText(target)
   def findNearestPlanet():
-    def dist(pos):
-      x, y, z = pos
-      return (x - cX) ** 2 + (y - cY) ** 2 + (z - cZ) ** 2
-    cX, cY, cZ = renderer.camera
+    if type(prevTargetPos) is not tuple:
+      return
+    camera_dist = renderer.camera_dist
     mi = 1e400
     result = None
-    for name in planets:
+    for name in targetNames:
       radius, model = planets[name]
-      D = dist(model.translate) ** 0.5 - radius
+      D = camera_dist(model.translate) - radius
       if D < mi:
         mi = D
         result = D, name, radius, model
@@ -311,20 +313,42 @@ def planetProcessor(models, renderer):
     if name != target:
       changeTarget(name)
       return
-    print("planet!", data)
-    if name in selectedPlanets: selectedPlanets.remove(name)
-    else: selectedPlanets.add(name)
-    for name in selectedPlanets:
-      radius, model = planets[name]
-      x, y, z = model.translate
+    glyphs = renderer.glyphs
+    if name in selectedPlanets:
+      _, _, n, n2 = selectedPlanets.pop(name)
+      renderer.textureChain.remove_texture(n)
+      renderer.glyphs.delete(n2)
+    else:
+      icon = generateIcon(name)
+      n = renderer.textureChain.add_texture(icon, 0, 0, 0, 0.5, 0.5)
+      glyphs.setHeight(renderer.W / 8)
+      glyphs.setColor(0xadffad)
+      n2 = glyphs.add(0, 0, 0, planetDescriptions.get(name, "?"), True, False)
+      selectedPlanets[name] = planets[name] + (n, n2)
+
+  def updateIcons():
+    set_pos_WH = renderer.textureChain.set_pos_WH
+    camera_dist = renderer.camera_dist
+    setPosition = renderer.glyphs.setPosition
+    W = renderer.W
+    ratio = renderer.WH_ratio
+    for name, (radius, model, n, n2) in selectedPlanets.items():
+      x, y, z = pos = model.translate
+      dist = camera_dist(pos)
+      dist = max(dist / radius, 2)
+      size = 1 / dist
       pos = (x, y, z, 1)._a_float
       pos2d = FLOAT.new_array(4)
       multiplyMV(pos2d, 0, renderer.MVPmatrix, 0, pos, 0)
-      x, y, z, w = pos2d
+      x, y, _, w = pos2d
       x /= w
       y /= w
-      z /= w
-      print("👣", name, x, y, z)
+      visible = w > 0 and size > 0.05
+      size2 = max(size, 0.05)
+      set_pos_WH(n, x, y, size, size, visible)
+      # set_pos_WH(n, x, y, size2, size2, w > 0)
+      setPosition(n2, x + size, y + size * ratio, size * W / 8, visible)
+
   def SunDraw(origDraw):
     def draw():
       glUniform1i(uLightSource, 1)
@@ -332,6 +356,13 @@ def planetProcessor(models, renderer):
       glUniform1i(uLightSource, 0)
     uLightSource = renderer.noPBR.uLightSource
     return draw
+  def generateIcon(name):
+    try: return iconCache[name]
+    except KeyError: pass
+    motor = icon_motor_sun if name == "Sun" else icon_motor
+    model = iconModels[name]
+    iconCache[name] = icon = iconGenerator(model, renderer, motor)
+    return icon
 
   unionM, PBR_unionM, charModelM = models
   #     unionM.type = UnionModel
@@ -358,11 +389,13 @@ def planetProcessor(models, renderer):
   moonNames = {"Earth": ("Moon (Luna)",)}
   targetNames = ("Sun", "Mercury", "Venus", "Earth", "Moon (Luna)", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Ceres", "Eris")
   targetNameSet = set(targetNames) # только для print
+  iconModels = {}
+  iconCache = {}
 
   for node in order:
     group = groups[node]
     name = node["_name"]
-    print("🐾🐾🐕", len(group), name, ("🔥", "✅")[name in targetNameSet])
+    # print("🐾🐾🐕", len(group), name, ("🔥", "✅")[name in targetNameSet])
 
     radius = group[-1].info["size"][0] # с учётом пояса и только X
     if name not in planetNames:
@@ -372,6 +405,10 @@ def planetProcessor(models, renderer):
     else: pos = (0, 0, 0)
 
     union = UnionModel(group)
+
+    scale = 1 / radius
+    icon_model = ScaleModel(union.clone(), (scale, scale, scale))
+    iconModels[name] = icon_model
 
     n = len(group) - 1
     while "decal" in group[n].info: n -= 1
@@ -405,7 +442,7 @@ def planetProcessor(models, renderer):
   targetN = -1
   changeTarget(1)
   prevTargetPos = 0
-  selectedPlanets = set()
+  selectedPlanets = {}
 
   renderer.camMoveEvent = haloSort
   renderer.recalcPlanetPositions = recalcPlanetPositions
@@ -510,6 +547,7 @@ class myRenderer:
       skyBoxLoader(d2textureProgram(skyboxLabeled, (1, 6), self), (0, 1, 2, 3, 4, 5)),
       skyBoxLoader(d2textureProgram(skyboxSpace, (4, 3), self), (6, 4, 3, 11, 7, 5), True),
       None,
+      None,
     )
     self.textureChain = TextureChain(self)
     self.pbr = PBR(self)
@@ -563,10 +601,8 @@ class myRenderer:
 
     self.calcViewMatrix()
 
-    pbr_mat = FLOAT.new_array(16)
-    setIdentityM(pbr_mat, 0)
-    self.rbxPBRmodel.recalc(pbr_mat)
-    self.SolarSystem.recalc(pbr_mat)
+    self.rbxPBRmodel.recalc(identity_mat)
+    self.SolarSystem.recalc(identity_mat)
     self.ready = True
 
   def onSurfaceChanged(self, gl10, width, height):
@@ -582,7 +618,7 @@ class myRenderer:
     self.calcMVPmatrix()
 
     if self.FBO is not None: deleteFrameBuffer(self.FBO)
-    self.FBO = newFrameBuffer(width, height)
+    self.FBO = newFrameBuffer(width, height, True)
 
     # настройка glyphs
 
@@ -653,8 +689,6 @@ class myRenderer:
     glClearColor(0, 0, 0, 1)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-    glEnable(GL_CULL_FACE)
-    glEnable(GL_DEPTH_TEST)
     self.colorama.draw(self.SolarSystem)
   def readPixel(self, x, y):
     buffer = MyBuffer.allocateDirect(4)
@@ -662,14 +696,11 @@ class myRenderer:
     glReadPixels(round(x), round(y), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, buffer)
     arr = BYTE.new_array(buffer._m_remaining())
     buffer._m_get(arr)
-    return (i & 255 for i in arr)
+    return bytes(arr)
 
   def drawScene(self):
     # glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glClear(GL_DEPTH_BUFFER_BIT)
-
-    glEnable(GL_CULL_FACE)
-    glEnable(GL_DEPTH_TEST)
 
     program = self.program
     #checkGLError() TODO
@@ -694,6 +725,7 @@ class myRenderer:
     self.noPBR.draw(self.SolarSystem)
     # self.pbr.draw(self.SolarSystem)
 
+    self.textureChain.draw_textures()
     self.gridProgram.draw(self.WH_ratio, self.eventN)
     self.glyphs.draw(self.WH_ratio)
 
@@ -719,17 +751,26 @@ class myRenderer:
 
     if self.updMVP: self.calcMVPmatrix()
 
+    glEnable(GL_CULL_FACE)
+    glEnable(GL_DEPTH_TEST)
+
     glBindFramebuffer(GL_FRAMEBUFFER, self.FBO[0])
     queue = self.clickHandlerQueue
+    cbs = []
     if queue:
       self.drawColorDimension()
       for x, y in queue:
         rgba = self.readPixel(x, self.H - y)
         cb = self.colorama.to_n(rgba)
-        if cb is not None: cb()
+        if cb is not None: cbs.append(cb)
       self.clickHandlerQueue.clear()
-    self.drawScene()
+    if self.skyboxN == 4:
+      self.drawColorDimension()
+    else: self.drawScene()
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
+
+    if cbs:
+      for cb in cbs: cb()
 
     self.textureChain.postprocessing()
     #print("🫢", glGetError())
@@ -784,6 +825,21 @@ class myRenderer:
     self.FBO = None
     SkyBox.restart()
     self.findNearestPlanet = lambda: None
+
+  def camera_dist(self, pos):
+    camX, camY, camZ = self.camera
+    x, y, z = pos
+    return ((x - camX) ** 2 + (y - camY) ** 2 + (z - camZ) ** 2) ** 0.5
+  def camera_dist_xyz(self, x, y, z):
+    camX, camY, camZ = self.camera
+    return ((x - camX) ** 2 + (y - camY) ** 2 + (z - camZ) ** 2) ** 0.5
+  def camera_dist2(self, pos):
+    camX, camY, camZ = self.camera
+    x, y, z = pos
+    return (x - camX) ** 2 + (y - camY) ** 2 + (z - camZ) ** 2
+  def camera_dist2_xyz(self, x, y, z):
+    camX, camY, camZ = self.camera
+    return (x - camX) ** 2 + (y - camY) ** 2 + (z - camZ) ** 2
 
   reverse = {
     "cr": onSurfaceCreated,

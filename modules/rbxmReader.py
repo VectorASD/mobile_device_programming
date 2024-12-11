@@ -50,7 +50,7 @@ class Storager:
             if not b: break
             file.seek(-1, 1)
             name, cdn, data = (file.read(BytesIO(file.read(4)).unpack("<I")[0]) for i in range(3))
-            print(name, len(cdn), len(data))
+            # print(name, len(cdn), len(data))
             base[name.decode("utf-8")] = cdn, data
           print("~" * 50)
       except OSError: pass

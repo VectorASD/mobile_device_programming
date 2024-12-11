@@ -65,12 +65,12 @@ class Model:
     #glBindBuffer(GL_ARRAY_BUFFER, 0)
     #glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
-  def delete(self):
+  def delete(self, printer = True):
     VBO, IBO, indexes = self.data
     buffers = (VBO, IBO)._a_int
     glDeleteBuffers(2, buffers, 0)
-    print2("♻️ buffers:", buffers[:])
-  
+    if printer: print2("♻️ buffers:", buffers[:])
+
   def clone(self):
     return Model(self.data)
 
@@ -208,7 +208,7 @@ class MatrixModel:
     self.model.recalc(sMat)
 
   def clone(self):
-    return MatrixModel(self.model.clone(), self.matrix)
+    return MatrixModel(self.model.clone(), self.matrix, self.info)
 
 
 
@@ -228,8 +228,7 @@ class UnionModel:
     self.models = ()
 
   def clone(self):
-    models = self.models
-    models = tuple(models.copy() if type(models) is list else models)
+    models = tuple(model.clone() for model in self.models)
     return UnionModel(models)
 
   def setColor(self, color):
@@ -454,7 +453,7 @@ class WaitingModel:
 
   def setColor(self, color):
     self.saved_color = color
-
+    
 
 
 class Quaternion:
@@ -754,20 +753,72 @@ void main() {
     SkyBox.model = None
     SkyBox.program = None
 
+glDepthFunc = GLES20._mw_glDepthFunc(int) # func
+GL_LEQUAL = GLES20._f_GL_LEQUAL
+GL_LESS = GLES20._f_GL_LESS
+
+
+
+class FBO_layer:
+  def __init__(self, size, depthTest = False, filter = GL_NEAREST):
+    self.size = size # кортеж из W и H
+    self.depthTest = depthTest
+    self.filter = filter
+  def __enter__(self):
+    oldViewportParams = INT.new_array(4)
+    glGetIntegerv(GL_VIEWPORT, oldViewportParams, 0)
+
+    W, H = self.size
+    fbo = newFrameBuffer(W, H, self.depthTest, None, self.filter)
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo[0])
+    glViewport(0, 0, W, H)
+
+    self.state = oldViewportParams, fbo
+    return fbo
+  def __exit__(self, exc, val, trace):
+    (x, y, w, h), fbo = self.state
+    glBindFramebuffer(GL_FRAMEBUFFER, 0)
+    deleteFrameBuffer(fbo)
+    glViewport(x, y, w, h)
+
+class CameraMotor:
+  def __init__(self):
+    self.projectionM = FLOAT.new_array(16)
+    self.viewM = FLOAT.new_array(16)
+    self.VPmatrix = FLOAT.new_array(16)
+    self.camera = 0, 0, 0
+    self.rotate = 180, 0, 0
+    self.WH_ratio = 1
+    self.size = 640, 640
+    self.light = 0, 0, 0
+    self.light_source = True
+  def recalc(self):
+    camera = camX, camY, camZ = self.camera
+    yaw, pitch, roll = self.rotate
+    projectionM = self.projectionM
+    viewM = self.viewM
+
+    q = Quaternion.fromYPR(yaw, pitch, roll)
+    q2 = q.conjugated()
+    perspectiveM(projectionM, 0, 90, self.WH_ratio, 0.01, 1000000)
+    translateM2(viewM, 0, q2.toMatrix(), 0, -camX, -camY, -camZ)
+    multiplyMM(self.VPmatrix, 0, projectionM, 0, viewM, 0)
+
+icon_motor_sun = CameraMotor()
+icon_motor_sun.camera = 0.8, 1.1, -0.8
+icon_motor_sun.rotate = 135, -45, 0
+icon_motor_sun.recalc()
+
+icon_motor = CameraMotor()
+icon_motor.camera = 0.8, 1.1, -0.8
+icon_motor.rotate = 135, -45, 0
+icon_motor.recalc()
+icon_motor.light_source = False
+icon_motor.light = 100, 0, -20
+
 
 
 def skyBoxLoader(gridProgram, indexes, flipY = False, dbg = False):
-  oldViewportParams = INT.new_array(4)
-  glGetIntegerv(GL_VIEWPORT, oldViewportParams, 0)
-
-  W, H = gridProgram.tileSize
-  # print("SKYBOX TILE SIZE:", W, H) всё верно высчитывает внутри gridProgram
-  fbo = newFrameBuffer(W, H, False)
-  glBindFramebuffer(GL_FRAMEBUFFER, fbo[0])
-  glViewport(0, 0, W, H)
-  #glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-  #glClear(GL_DEPTH_BUFFER_BIT) а смысл, если в FBO нет рендер-буфера глубины
-
   def textureCutter(n):
     id = indexes[n]
     # Текстуры Skybox-сторон капризничают -> им нужны сразу обе инверсии текстурных координат
@@ -787,17 +838,29 @@ def skyBoxLoader(gridProgram, indexes, flipY = False, dbg = False):
       print("👍", n, arr[:])
     return buffer
 
-  skybox = SkyBox(W, H, textureCutter, gridProgram.renderer)
+  W, H = size = gridProgram.tileSize
+  # print("SKYBOX TILE SIZE:", W, H) всё верно высчитывается внутри gridProgram
+  with FBO_layer(size) as fbo:
+    #glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    #glClear(GL_DEPTH_BUFFER_BIT) а смысл, если в FBO нет рендер-буфера глубины
+    skybox = SkyBox(W, H, textureCutter, gridProgram.renderer)
 
-  glBindFramebuffer(GL_FRAMEBUFFER, 0)
-  deleteFrameBuffer(fbo)
-  x, y, w, h = oldViewportParams
-  glViewport(x, y, w, h)
   return skybox
 
-glDepthFunc = GLES20._mw_glDepthFunc(int) # func
-GL_LEQUAL = GLES20._f_GL_LEQUAL
-GL_LESS = GLES20._f_GL_LESS
+def iconGenerator(model, renderer, camera_motor):
+  CM = camera_motor
+  with FBO_layer(CM.size, True, GL_LINEAR) as fbo:
+    texture = fbo[1]
+    fbo[1] = 0 # предотвратит автоматическое удаление текстуры
+    glClearColor(0, 0, 0, 0)
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    glEnable(GL_CULL_FACE)
+    glEnable(GL_DEPTH_TEST)
+    model.recalc(identity_mat)
+    renderer.noPBR.custom_draw(model, CM.camera, CM.light, CM.VPmatrix, CM.light_source)
+  global dbgTextures
+  dbgTextures = dbgTextures[0], texture
+  return texture
 
 
 
@@ -812,10 +875,11 @@ class TextureChain:
     self.program = _, attribs, uniforms = checkProgram(newProgram("""
 attribute vec2 vPosition;
 attribute vec2 vUV;
+uniform mat4 uMatrix;
 varying vec2 vaUV;
 
 void main() {
-  gl_Position = vec4(vPosition, 0., 1.);
+  gl_Position = uMatrix * vec4(vPosition, 0., 1.);
   vaUV = vUV;
 }
 """, """
@@ -829,16 +893,19 @@ void main() {
   color.a = pow(color.a, 1. / 5.5); // усиленная гамма-коррекция альфы (5.5 вместо 2.2)
   gl_FragColor = color;
 }
-""", ('vPosition', 'vUV'), ('uTexture', 'uTextureColor')))
+""", ('vPosition', 'vUV'), ('uTexture', 'uTextureColor', 'uMatrix')))
     vPosition = attribs["vPosition"]
     vUV = attribs["vUV"]
     self.uTexture = uniforms["uTexture"]
     self.uTextureColor = uniforms["uTextureColor"]
+    self.uMatrix = uniforms["uMatrix"]
     def func():
       glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 4 * 4, 0)
       glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 4 * 4, 2 * 4)
     self.func = func
     self.location = None
+    self.textures = {}
+    self.last_texture_id = 0
 
   def genModel(self):
     self.model = Model((
@@ -864,6 +931,7 @@ void main() {
     glEnable(GL_SCISSOR_TEST)
     glClear(GL_COLOR_BUFFER_BIT)
     glDisable(GL_SCISSOR_TEST)
+
     glDisable(GL_CULL_FACE)
     glDisable(GL_DEPTH_TEST)
 
@@ -881,6 +949,7 @@ void main() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     x, y, w, h = oldViewportParams
     glViewport(x, y, w, h)
+
     glEnable(GL_CULL_FACE)
     glEnable(GL_DEPTH_TEST)
 
@@ -893,14 +962,82 @@ void main() {
     return texture
 
   def postprocessing(self):
+    glDisable(GL_CULL_FACE)
+    glDisable(GL_DEPTH_TEST)
+
     enableProgram(self.program)
     glUniform1i(self.uTexture, 0)
     glUniform4f(self.uTextureColor, 1, 1, 1, 1)
+    glUniformMatrix4fv(self.uMatrix, 1, False, identity_mat, 0)
 
     glBindTexture(GL_TEXTURE_2D, self.renderer.FBO[1])
+    self.model.draw()
+
+  def add_texture(self, id, x, y, cells, W, H):
+    data = [[id, x, y, cells, W, H], None, None, True]
+    self.recalc_texture(data)
+
+    n = self.last_texture_id
+    self.last_texture_id = n + 1
+    self.textures[n] = data
+    return n
+
+  def recalc_texture(self, data):
+    id, x, y, cells, W, H = data[0]
+    WH_ratio = self.renderer.WH_ratio
+    mat = FLOAT.new_array(16)
+    mat2 = FLOAT.new_array(16)
+    if cells:
+      scaleM2(mat, 0, identity_mat, 0, 1/cells, WH_ratio/cells, 0)
+      translateM(mat, 0, 1-cells, cells-1 - 2*cells * (WH_ratio - 1), 0)
+      translateM2(mat2, 0, mat, 0, 2*x, -2*y, 0)
+    else:
+      translateM2(mat, 0, identity_mat, 0, x, y, 0)
+      scaleM2(mat2, 0, mat, 0, W, H * WH_ratio, 0)
+    data[1] = mat
+    data[2] = WH_ratio, id, mat2
+
+  def set_pos(self, n, x, y):
+    data = self.textures[n]
+    info, mat, (ratio, id, mat2), _ = data
+    info[1] = x
+    info[2] = y
+    if info[3]:
+      translateM2(mat2, 0, mat, 0, 2*x, -2*y, 0)
+    else:
+      ratio = self.renderer.WH_ratio
+      translateM2(mat, 0, identity_mat, 0, x, y, 0)
+      scaleM2(mat2, 0, mat, 0, info[4], info[5] * ratio, 0)
+      data[2] = ratio, id, mat2
+
+  def set_pos_WH(self, n, x, y, W, H, visible):
+    data = self.textures[n]
+    info, mat, (ratio, id, mat2), _ = data
+    if info[3]: 1/0 # не рассчитано на cells != 0
+    data[0] = id, x, y, 0, W, H
+    translateM2(mat, 0, identity_mat, 0, x, y, 0)
+    scaleM2(mat2, 0, mat, 0, W, H * ratio, 0)
+    data[3] = visible
+
+  def remove_texture(self, n):
+    self.textures.pop(n)
+  def draw_textures(self):
     glDisable(GL_CULL_FACE)
     glDisable(GL_DEPTH_TEST)
-    self.model.draw()
+
+    enableProgram(self.program)
+    glUniform1i(self.uTexture, 0)
+    glUniform4f(self.uTextureColor, 1, 1, 1, 1)
+    draw = self.model.draw
+    WH_ratio = self.renderer.WH_ratio
+    for data in self.textures.values():
+      if data[3]: # visible
+        ratio, id, mat2 = data[2]
+        if ratio != WH_ratio: self.recalc_texture(data)
+        glUniformMatrix4fv(self.uMatrix, 1, False, mat2, 0)
+        glBindTexture(GL_TEXTURE_2D, id)
+        draw()
+
     glEnable(GL_CULL_FACE)
     glEnable(GL_DEPTH_TEST)
 
@@ -1199,6 +1336,16 @@ void main() {
     glUniformMatrix4fv(self.uVPMatrix, 1, False, renderer.MVPmatrix, 0)
     glUniform1i(self.uLightSource, 0)
     model.draw()
+  def custom_draw(self, model, camera, light, VPmatrix, is_light_source = False):
+    enableProgram(self.program)
+
+    camX, camY, camZ = camera
+    lightX, lightY, lightZ = light
+    glUniform3f(self.uCamPos, camX, camY, camZ)
+    glUniform3f(self.uLightPos, lightX, lightY, lightZ)
+    glUniformMatrix4fv(self.uVPMatrix, 1, False, VPmatrix, 0)
+    glUniform1i(self.uLightSource, int(is_light_source))
+    model.draw()
 
 
 
@@ -1228,10 +1375,11 @@ class Colorama:
   def genProgram(self):
     self.program = _, attribs, uniforms = checkProgram(newProgram("""
 attribute vec3 vPosition;
-uniform mat4 uMVPMatrix;
+uniform mat4 uVPMatrix;
+uniform mat4 uModelM;
 
 void main() {
-  gl_Position = uMVPMatrix * vec4(vPosition.xyz, 1);
+  gl_Position = uVPMatrix * uModelM * vec4(vPosition.xyz, 1);
 }
 """, """
 precision mediump float;
@@ -1240,8 +1388,9 @@ uniform vec3 uColor;
 void main() {
   gl_FragColor = vec4(uColor, 1.);
 }
-""", ('vPosition',), ('uMVPMatrix', 'uColor')))
-    uMVPMatrix = uniforms["uMVPMatrix"]
+""", ('vPosition',), ('uVPMatrix', 'uModelM', 'uColor')))
+    self.uVPMatrix = uniforms["uVPMatrix"]
+    uModelM = uniforms["uModelM"]
     uColor = uniforms["uColor"]
     vPosition = attribs["vPosition"]
     def func(color):
@@ -1252,11 +1401,12 @@ void main() {
       #glVertexAttribPointer(a["vUV"],       2, GL_FLOAT, False, 12 * 4, 6 * 4)
       #glVertexAttribPointer(a["vTangent"], 4, GL_FLOAT, False, 12 * 4, 8 * 4)
     self.func = func
-    self.location = uMVPMatrix
+    self.location = uModelM
   def draw(self, model):
     renderer = self.renderer
     renderer.colorDimension = True
     enableProgram(self.program)
+    glUniformMatrix4fv(self.uVPMatrix, 1, False, renderer.MVPmatrix, 0)
     model.draw()
     renderer.colorDimension = False
 
