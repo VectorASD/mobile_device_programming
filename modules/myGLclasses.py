@@ -65,12 +65,12 @@ class Model:
     #glBindBuffer(GL_ARRAY_BUFFER, 0)
     #glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
-  def delete(self):
+  def delete(self, printer = True):
     VBO, IBO, indexes = self.data
     buffers = (VBO, IBO)._a_int
     glDeleteBuffers(2, buffers, 0)
-    print2("♻️ buffers:", buffers[:])
-  
+    if printer: print2("♻️ buffers:", buffers[:])
+
   def clone(self):
     return Model(self.data)
 

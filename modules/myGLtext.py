@@ -300,8 +300,9 @@ void main() {
     self.func = func
     self.uTexture = uniforms["uTexture"]
     self.uAspect = uniforms["uAspect"]
-    self.models = []
-    self.draws = []
+    self.models = {}
+    self.model_n = 0
+    self.draws = {}
     self.height = 24
     self.color = (0, 0, 0, 1)
     self.printer = True
@@ -330,11 +331,15 @@ void main() {
     self.color = r / 255, g / 255, b / 255, self.color[3]
 
   def setText(self, index, text, height = None):
-    posX, posY, L, oldText, self.dir, self.color = self.models[index]
+    posX, posY, L, oldText, self.dir, self.color, _, visible, cache = self.models[index]
     if height is not None: self.height = height
-    self.replace(index, posX, posY, L, text)
+    self.replace(index, posX, posY, L, text, visible, cache)
+  def setPosition(self, index, posX, posY, height = None, visible = True):
+    _, _, L, text, self.dir, self.color, _, _, cache = self.models[index]
+    if height is not None: self.height = height
+    self.replace(index, posX, posY, L, text, visible, cache)
 
-  def create(self, startX, startY, text):
+  def create(self, startX, startY, text, cache = True):
     W = self.renderer.W
     key = W, self.height, self.dir, startX, startY, text
     try: return self.cache[key]
@@ -397,22 +402,41 @@ void main() {
       x = x2
       step += 4
 
-    self.cache[key] = model = Model(VBO, IBO, self, self.printer)
+    model = Model(VBO, IBO, self, self.printer)
+    if cache: self.cache[key] = model
+    # print(len(self.cache), cache)
     return model
 
-  def replace(self, index, posX, posY, L, text):
+  def replace(self, index, posX, posY, L, text, visible = True, cache = True):
     # print("•", index, posX, posY, L, text, self.dir, self.color, self.height, "•")
-    self.models[index] = posX, posY, L, text, self.dir, self.color
-    L /= 2
-    L1 = L - 1
-    x, y = (posX - L) / L, (posY - L) / -L
-    self.draws[index] = self.create(x, y, text).draw
-  def add(self, posX, posY, L, text):
-    index = len(self.models)
-    self.models.append(None)
-    self.draws.append(None)
-    self.replace(index, posX, posY, L, text)
+    if not cache:
+      data = self.models.get(index, None)
+      if data:
+        model = data[6]
+        if model: model.delete(False) # data[6] <-> model
+    if L:
+      L2 = L / 2
+      x, y = (posX - L2) / L2, (posY - L2) / -L2
+    else:
+      ratio = self.renderer.WH_ratio
+      x, y = posX, (posY - (1 - ratio)) / ratio
+    if visible:
+      model = self.create(x, y, text, cache)
+      self.draws[index] = model.draw
+    else:
+      model = None
+      self.draws.pop(index, None)
+    self.models[index] = posX, posY, L, text, self.dir, self.color, model, visible, cache
+  def add(self, posX, posY, L, text, visible = True, cache = True):
+    index = self.model_n
+    self.model_n = index + 1
+    self.replace(index, posX, posY, L, text, visible, cache)
     return index
+  def delete(self, index):
+    data = self.models.pop(index)
+    model, cache = data[6], data[8]
+    if not cache and model: model.delete(False)
+    self.draws.pop(index, None)
 
   def draw(self, aspect, customDraws = None):
     self.aspect = aspect
@@ -425,7 +449,7 @@ void main() {
     glBindTexture(GL_TEXTURE_2D, self.texture)
 
     draws = customDraws if customDraws is not None else self.draws
-    for draw in draws: draw()
+    for draw in draws.values(): draw()
 
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_CULL_FACE)

@@ -313,17 +313,26 @@ def planetProcessor(models, renderer):
     if name != target:
       changeTarget(name)
       return
+    glyphs = renderer.glyphs
     if name in selectedPlanets:
-      n = selectedPlanets.pop(name)[2]
+      _, _, n, n2 = selectedPlanets.pop(name)
       renderer.textureChain.remove_texture(n)
+      renderer.glyphs.delete(n2)
     else:
       icon = generateIcon(name)
       n = renderer.textureChain.add_texture(icon, 0, 0, 0, 0.5, 0.5)
-      selectedPlanets[name] = planets[name] + (n,)
+      glyphs.setHeight(renderer.W / 8)
+      glyphs.setColor(0xadffad)
+      n2 = glyphs.add(0, 0, 0, planetDescriptions.get(name, "?"), True, False)
+      selectedPlanets[name] = planets[name] + (n, n2)
+
   def updateIcons():
     set_pos_WH = renderer.textureChain.set_pos_WH
     camera_dist = renderer.camera_dist
-    for name, (radius, model, n) in selectedPlanets.items():
+    setPosition = renderer.glyphs.setPosition
+    W = renderer.W
+    ratio = renderer.WH_ratio
+    for name, (radius, model, n, n2) in selectedPlanets.items():
       x, y, z = pos = model.translate
       dist = camera_dist(pos)
       dist = max(dist / radius, 2)
@@ -334,7 +343,11 @@ def planetProcessor(models, renderer):
       x, y, _, w = pos2d
       x /= w
       y /= w
-      set_pos_WH(n, x, y, size, size, w > 0 and size > 0.01)
+      visible = w > 0 and size > 0.05
+      size2 = max(size, 0.05)
+      set_pos_WH(n, x, y, size, size, visible)
+      # set_pos_WH(n, x, y, size2, size2, w > 0)
+      setPosition(n2, x + size, y + size * ratio, size * W / 8, visible)
 
   def SunDraw(origDraw):
     def draw():
