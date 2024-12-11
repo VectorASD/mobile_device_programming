@@ -235,10 +235,12 @@ def planetProcessor(models, renderer):
     def dist(pos):
       x, y, z = pos
       return (x - cX) ** 2 + (y - cY) ** 2 + (z - cZ) ** 2
+    if type(prevTargetPos) is not tuple:
+      return
     cX, cY, cZ = renderer.camera
     mi = 1e400
     result = None
-    for name in planets:
+    for name in targetNames:
       radius, model = planets[name]
       D = dist(model.translate) ** 0.5 - radius
       if D < mi:
@@ -510,6 +512,7 @@ class myRenderer:
       skyBoxLoader(d2textureProgram(skyboxLabeled, (1, 6), self), (0, 1, 2, 3, 4, 5)),
       skyBoxLoader(d2textureProgram(skyboxSpace, (4, 3), self), (6, 4, 3, 11, 7, 5), True),
       None,
+      None,
     )
     self.textureChain = TextureChain(self)
     self.pbr = PBR(self)
@@ -662,7 +665,7 @@ class myRenderer:
     glReadPixels(round(x), round(y), 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, buffer)
     arr = BYTE.new_array(buffer._m_remaining())
     buffer._m_get(arr)
-    return (i & 255 for i in arr)
+    return bytes(arr)
 
   def drawScene(self):
     # glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -728,7 +731,9 @@ class myRenderer:
         cb = self.colorama.to_n(rgba)
         if cb is not None: cb()
       self.clickHandlerQueue.clear()
-    self.drawScene()
+    if self.skyboxN == 4:
+      self.drawColorDimension()
+    else: self.drawScene()
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
     self.textureChain.postprocessing()

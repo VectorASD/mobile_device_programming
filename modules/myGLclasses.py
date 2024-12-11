@@ -1228,10 +1228,11 @@ class Colorama:
   def genProgram(self):
     self.program = _, attribs, uniforms = checkProgram(newProgram("""
 attribute vec3 vPosition;
-uniform mat4 uMVPMatrix;
+uniform mat4 uVPMatrix;
+uniform mat4 uModelM;
 
 void main() {
-  gl_Position = uMVPMatrix * vec4(vPosition.xyz, 1);
+  gl_Position = uVPMatrix * uModelM * vec4(vPosition.xyz, 1);
 }
 """, """
 precision mediump float;
@@ -1240,8 +1241,9 @@ uniform vec3 uColor;
 void main() {
   gl_FragColor = vec4(uColor, 1.);
 }
-""", ('vPosition',), ('uMVPMatrix', 'uColor')))
-    uMVPMatrix = uniforms["uMVPMatrix"]
+""", ('vPosition',), ('uVPMatrix', 'uModelM', 'uColor')))
+    self.uVPMatrix = uniforms["uVPMatrix"]
+    uModelM = uniforms["uModelM"]
     uColor = uniforms["uColor"]
     vPosition = attribs["vPosition"]
     def func(color):
@@ -1252,11 +1254,12 @@ void main() {
       #glVertexAttribPointer(a["vUV"],       2, GL_FLOAT, False, 12 * 4, 6 * 4)
       #glVertexAttribPointer(a["vTangent"], 4, GL_FLOAT, False, 12 * 4, 8 * 4)
     self.func = func
-    self.location = uMVPMatrix
+    self.location = uModelM
   def draw(self, model):
     renderer = self.renderer
     renderer.colorDimension = True
     enableProgram(self.program)
+    glUniformMatrix4fv(self.uVPMatrix, 1, False, renderer.MVPmatrix, 0)
     model.draw()
     renderer.colorDimension = False
 
