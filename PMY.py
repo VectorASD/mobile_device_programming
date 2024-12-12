@@ -14,6 +14,7 @@ import myGL31
 import myGLtext
 import rbxmReader
 import planetEngine
+import myGLnoise
 
 
 
@@ -246,6 +247,8 @@ def planetProcessor(models, renderer):
       if D < mi:
         mi = D
         result = D, name, radius, model
+    center_D = camera_dist((0, 0, 0))
+    if center_D < mi: result = (center_D,) + result[1:]
     return result
 
   # Индекс неиспользованных в двигателе планет (от большей к меньшей):
@@ -471,6 +474,7 @@ class myRenderer:
     self.camera = 0, 0, -3.5
     self.eventN = 0
     self.time, self.td = time(), 0
+    self.start_time, self.time2 = time() + frandom(-86400, 86400), 0
     self.moveTd = 0
     self.moveTd2 = 0
 
@@ -555,6 +559,7 @@ class myRenderer:
     self.glyphs = glyphs = glyphTextureGenerator(self)
     glyphs.printer = False
     self.colorama = Colorama(self)
+    self.noise = Noise(self)
 
     # настройка шейдерных программ
 
@@ -723,7 +728,7 @@ class myRenderer:
     for model in self.models: model.draw()
 
     self.noPBR.draw(self.SolarSystem)
-    # self.pbr.draw(self.SolarSystem)
+    self.noise.draw()
 
     self.textureChain.draw_textures()
     self.gridProgram.draw(self.WH_ratio, self.eventN)
@@ -736,6 +741,8 @@ class myRenderer:
     T = time()
     self.td = T - self.time
     self.time = T
+    self.time2 = T - self.start_time
+
     #print("📽️ onDraw", gl)
 
     self.fps()
