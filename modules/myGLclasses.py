@@ -937,6 +937,7 @@ void main() {
 
     enableProgram(self.program)
     glUniform1i(self.uTexture, 0)
+    glUniformMatrix4fv(self.uMatrix, 1, False, identity_mat, 0)
     #glUniform1i(self.uUseGamma, int(gamma))
     draw = self.model.draw
     for texture2, textureColor in textures:

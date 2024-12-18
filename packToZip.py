@@ -21,6 +21,7 @@ paths = (
   ("modules/random.py", None),
   ("modules/common.py", None),
   ("modules/planetEngine.py", None),
+  ("modules/myGLnoise.py", None),
 
   ("resources/textures.png", None),
   ("resources/avatar.rbxm", None),

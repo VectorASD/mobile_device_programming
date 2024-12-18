@@ -247,7 +247,12 @@ def newShader(type, code):
   if arr[0] == GL_FALSE:
     err = glGetShaderInfoLog(shader)
     glDeleteShader(shader)
-    shader = err
+    arr = [""]
+    for err in err.split("\n"):
+      line_n = int(err.split(":")[1]) - 1
+      line = code.split("\n")[line_n]
+      arr.append("%s 🔥%s🔥" % (err, line))
+    shader = "\n".join(arr)
   return shader
 
 def newProgram(vCode, fCode, attribs, uniforms):
