@@ -10,7 +10,7 @@ class Model:
       self.data = VBOdata
       self.matrix = None
       return
-    if shaderProgram is None: exit("shader program not defined :/")
+    if shaderProgram is None: HALT("shader program not defined :/")
 
     buffers = INT.new_array(2)
     glGenBuffers(2, buffers, 0)
@@ -339,7 +339,7 @@ class CharacterModel:
         colorMap = await(VIEW, lambda: textureChain.use((1, 1), (r, g, b, 1)))
       else:
         colorMap2 = await(VIEW, lambda: newTexture2(colorMap))
-        size = texture2size[colorMap]
+        size = texture2size[colorMap2]
         colorMap = await(VIEW, lambda: textureChain.use(size, (0, 0, 0, 1), ((colorMap2, (r, g, b, 1)),), True))
       metalnessMap, normalMap, roughnessMap = (None if tex is None else await(VIEW, lambda: newTex(tex)) for tex in otherTex)
 
@@ -1191,13 +1191,14 @@ void main() {
   def draw(self, models):
     if not models: return
     renderer = self.renderer
+    lightX, lightY, lightZ = renderer.lightPos
 
     enableProgram(self.program)
     glUniform1i(self.uAlbedoMap, 0)
     glUniform1i(self.uNormalMap, 1)
     glUniform3f(self.uCamPos, renderer.camX, renderer.camY, renderer.camZ)
     glUniformMatrix4fv(self.uVPMatrix, 1, False, renderer.MVPmatrix, 0)
-    glUniform3f(self.uLightPos, 0, 3, 0)
+    glUniform3f(self.uLightPos, lightX, lightY, lightZ)
 
     try: models.draw()
     except AttributeError:
@@ -1216,7 +1217,7 @@ class PBR_Model:
 
   def draw(self):
     pbr = PBR_Model.PBR
-    if pbr is None: exit("class 'PBR' not defined")
+    if pbr is None: HALT("class 'PBR' not defined")
 
     colorMap, metalnessMap, normalMap, roughnessMap = self.textures
 

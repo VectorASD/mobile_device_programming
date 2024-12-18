@@ -65,7 +65,8 @@ def getCFrame(props):
   if type == 0x10: return value # CFrame
   if type == 0x1e: # OptionalCoordinateFrame
     useful, cframe = value
-    if useful: return cframe
+    # if useful: return cframe
+    return cframe
 
 def getHumanoid(node):
   res = None
@@ -87,36 +88,36 @@ def getDecals(node):
 
 def checkString(prop):
   type, value = prop
-  if type != 0x01: exit("Это не String: %s" % prop)
+  if type != 0x01: HALT("Это не String: %s" % prop)
   return value
 def checkFloat32(prop):
   type, value = prop
-  if type != 0x04: exit("Это не Float32: %s" % prop)
+  if type != 0x04: HALT("Это не Float32: %s" % prop)
   return value
 def checkColor3(prop):
   type, value = prop
-  if type != 0x0c: exit("Это не Color3: %s" % prop)
+  if type != 0x0c: HALT("Это не Color3: %s" % prop)
   return value
 def checkVector3(prop):
   type, value = prop
-  if type != 0x0e: exit("Это не Vector3: %s" % prop)
+  if type != 0x0e: HALT("Это не Vector3: %s" % prop)
   return value
 def checkCFrame(prop):
   type, value = prop
-  if type != 0x10: exit("Это не CFrame: %s" % prop)
+  if type != 0x10: HALT("Это не CFrame: %s" % prop)
   return value
 def checkEnum(prop, arr):
   type, value = prop
-  if type != 0x12: exit("Это не Enum: %s" % prop)
-  if value < 0 or value >= len(arr): exit("Значение Enum за пределами: %s (0..%s)" % (value, len(arr) - 1))
+  if type != 0x12: HALT("Это не Enum: %s" % prop)
+  if value < 0 or value >= len(arr): HALT("Значение Enum за пределами: %s (0..%s)" % (value, len(arr) - 1))
   return value, arr[value]
 def checkReferent(prop):
   type, value = prop
-  if type != 0x13: exit("Это не Referent: %s" % prop)
+  if type != 0x13: HALT("Это не Referent: %s" % prop)
   return value
 def checkColor3uint8(prop):
   type, value = prop
-  if type != 0x1a: exit("Это не Color3uint8: %s" % prop)
+  if type != 0x1a: HALT("Это не Color3uint8: %s" % prop)
   return value
 
 
@@ -179,7 +180,7 @@ def getCube():
 
 
 
-def modelHandler(root):
+def modelHandler(root, root_pos):
   mesh_cache = STORAGE("mesh_cache")
 
   def mesh2model(mesh_id):
@@ -214,7 +215,8 @@ def modelHandler(root):
       shape, shapeName = checkEnum(props["shape"], ("Ball", "Block", "Cylinder", "Wedge", "CornerWedge")) # в роблоксе: Enum.PartType
       # print(shape, shapeName)
       model = getCube()
-      if shape != 1: exit("Пока поддерживается только форма Block")
+      return
+      if shape != 1: HALT("Пока поддерживается только форма Block, а не " + shapeName)
       model_name = "cube"
     else:
       model_name = checkString(props["MeshId"])
@@ -235,7 +237,7 @@ def modelHandler(root):
     model_data = VBOdata, IBOdata, model_name
     SA = getSurfaceAppearance(node)
     if SA:
-      if isPart: exit("Пока не поддерживается Part + SA :/")
+      if isPart: HALT("Пока не поддерживается Part + SA :/")
       SA_props = SA["_props"]
       color = checkColor3(SA_props["Color"])
       colorMap = cdnLoader(checkString(SA_props["ColorMap"]))
@@ -258,20 +260,22 @@ def modelHandler(root):
     result = node, pos, model_data, tex, isBody, info
     return SA, result
 
-  def recurs(node, root_pos):
+  def recurs(node, root_pos, lvl):
     nonlocal motorTree
 
     id, parent, childs, className, name = node["_id"], node["_parent"], node["_childs"], node["_class"], node["_name"]
     props = node["_props"]
+    print("  " * lvl, name, className)
 
     if root_pos is None:
       pos = getCFrame(props)
       if pos is not None:
+        # print("POS FIND", pos, root_pos is None)
         mat = CFrame2mat_onlyPos(pos)
         root_pos = FLOAT.new_array(16)
         invertM(root_pos, 0, mat, 0)
 
-    if className == "Model":
+    if className in ("Model", "Tool"):
       humanoid = getHumanoid(node)
       # humanoid = None
       if humanoid is not None:
@@ -293,6 +297,7 @@ def modelHandler(root):
       else:
         pos = CFrame2mat(getCFrame(props))
         multiplyMM(pos, 0, root_pos, 0, pos, 0)
+        # print("POS:", pos[:])
 
       data = meshPart(node, pos, accessory, is_character_part)
       if data is not None:
@@ -325,7 +330,8 @@ def modelHandler(root):
       asset = cdnLoader(checkString(props["PantsTemplate"]))
       pantss.append((color, asset))
 
-    for child in childs: recurs(child, root_pos)
+    lvl += 1
+    for child in childs: recurs(child, root_pos, lvl)
 
   models = []
   PBR_models = []
@@ -337,20 +343,20 @@ def modelHandler(root):
   characterModels = []
   characterPBR_models = []
 
-  recurs(root, None)
+  recurs(root, root_pos, 0)
   character = motorTree, characterModels, characterPBR_models
 
   return models, PBR_models, shirts, pantss, character
 
 
 
-def modelLoader(root, name, renderer):
+def modelLoader(root, name, renderer, root_pos):
   global dbgTextures
 
   cache = STORAGE("rbxm_modelHandler_cache")
   try: models, PBR_models, shirts, pantss, character = cache[name]
   except KeyError:
-    models, PBR_models, shirts, pantss, character = record = modelHandler(root)
+    models, PBR_models, shirts, pantss, character = record = modelHandler(root, root_pos)
     cache[name] = record
 
   # pants = newTexture2(pantss[0][1])

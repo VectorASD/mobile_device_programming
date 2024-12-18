@@ -29,6 +29,7 @@ paths = (
   ("resources/skybox_space.webp", None),
   ("resources/SolarSystem.rbxm", None),
   ("resources/emoji2.txt", None),
+  ("resources/CourseWork.rbxm", None),
 
   ("EulerRotators.py", None),
   ("resources/emoji.txt", None),

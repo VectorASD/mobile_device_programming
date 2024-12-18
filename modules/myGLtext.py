@@ -145,7 +145,7 @@ def Packer(W, H, boxes):
   # вместо HashMap будет TreeMap, а вместо HashSet будет TreeSet соответственно
   #print(treemap())
   #print(treemap({5: "cat", 6: "dog", 0: "meow"}))
-  #exit()
+  #HALT()
 
   boxes = sorted(boxes, key = lambda x: x[0], reverse = True)
   dots = treeset([(0, 0)])
@@ -373,7 +373,7 @@ void main() {
       try: box = dict[letter]
       except IndexError:
         print2("💥 Нет такого символа: '%s'" % letter)
-        exit()
+        HALT()
       uv_x, uv_y, w, h, (left, right, top, bottom) = box
       # print(uv_x, uv_y, w, h, (left, right, top, bottom))
       uv_x2 = uv_x + w
