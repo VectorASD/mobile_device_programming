@@ -281,6 +281,28 @@ class CharacterModel:
   def __init__(self, character, renderer):
     global dbgTextures
 
+    def load_model(model_data):
+      VBOdata, IBOdata, name = model_data
+      try: return model_cache[name].clone()
+      except KeyError:
+        model = await(VIEW, lambda: Model(VBOdata, IBOdata, program))
+        model_cache[name] = model
+        return model
+
+    def load_texture(texture_data, mipmap = False):
+      texture, name = texture_data
+      try: return texture_cache[name]
+      except KeyError:
+        def loader():
+          texture_id = newTexture2(texture)
+          glBindTexture(GL_TEXTURE_2D, texture_id)
+          glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+          glGenerateMipmap(GL_TEXTURE_2D)
+          return texture_id
+        texture = await(VIEW, loader if mipmap else lambda: newTexture2(texture))
+        texture_cache[name] = texture
+        return texture
+
     self.motorTree, models, PBR_models = character
     alternativeMode = self.motorTree is None
     VIEW = renderer.view
@@ -293,32 +315,29 @@ class CharacterModel:
     self.models = models2 = []
     self.PBR_models = PBR_models2 = []
     model_cache = renderer.model_cache
+    texture_cache = renderer.texture_cache
 
     for node, pos, model_data, tex, isBody, info in models:
-      VBOdata, IBOdata, model_name = model_data
       #if isBody: texture = bodyTexture
       #else: # tex всегда есть
       color, texArr = tex
       if not texArr and "decal" in info:
         texture, body, color2 = info["decal"]
-        textureTmp = await(VIEW, lambda: newTexture2(texture))
+        textureTmp = load_texture(texture)
         size = texture2size[textureTmp]
         texture = await(VIEW, lambda: textureChain.use(size, color, ((textureTmp, color2),), False))
-        # print(";'-}", color, color2)
-        dbgTextures = textureTmp, texture
+        # print(";'-}", color, color2, textureTmp, texture, node["_name"], model_data[2])
+        if model_data[2] == "cube": dbgTextures = textureTmp, texture
         useDecal = True
       else:
-        texArr = ((await(VIEW, lambda: newTexture2(tex)), color) for tex, color in texArr)
+        texArr = ((load_texture(tex), color) for tex, color in texArr)
         size = texture2size[texArr[0][0]] if texArr else (1, 1)
         # print("🤗 SIZE%s:" % (" (body)" if isBody else ""), size, color, texArr)
         texture = await(VIEW, lambda: textureChain.use(size, color, texArr, False))
-        if texArr: dbgTextures = texArr[0][0], texture
+        # if texArr: dbgTextures = texArr[0][0], texture
         useDecal = False
 
-      try: model = model_cache[model_name].clone()
-      except KeyError:
-        model = await(VIEW, lambda: Model(VBOdata, IBOdata, program))
-        model_cache[model_name] = model
+      model = load_model(model_data)
       if texture: model = TexturedModel(model, texture)
       # model = PBR_Model(model, texture, None, None, None)
       # if useDecal: model = NoCullFaceModel(model)
@@ -326,27 +345,17 @@ class CharacterModel:
       model = MatrixModel(model, pos, info)
       models2.append(model if alternativeMode else (node["_id"], model))
 
-    def newTex(bin):
-      texture = newTexture2(bin)
-      glBindTexture(GL_TEXTURE_2D, texture)
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
-      glGenerateMipmap(GL_TEXTURE_2D)
-      return texture
     for node, pos, model_data, PBR_textures, isBody, info in PBR_models:
-      VBOdata, IBOdata, model_name = model_data
       (r, g, b), colorMap, otherTex = PBR_textures
-      if colorMap is None:
+      if colorMap[0] is None:
         colorMap = await(VIEW, lambda: textureChain.use((1, 1), (r, g, b, 1)))
       else:
-        colorMap2 = await(VIEW, lambda: newTexture2(colorMap))
+        colorMap2 = load_texture(colorMap)
         size = texture2size[colorMap2]
         colorMap = await(VIEW, lambda: textureChain.use(size, (0, 0, 0, 1), ((colorMap2, (r, g, b, 1)),), True))
-      metalnessMap, normalMap, roughnessMap = (None if tex is None else await(VIEW, lambda: newTex(tex)) for tex in otherTex)
+      metalnessMap, normalMap, roughnessMap = (None if tex[0] is None else load_texture(tex, True) for tex in otherTex)
 
-      try: model = model_cache[model_name].clone()
-      except KeyError:
-        model = await(VIEW, lambda: Model(VBOdata, IBOdata, PBR))
-        model_cache[model_name] = model
+      model = load_model(model_data)
       model = PBR_Model(model, colorMap, metalnessMap, normalMap, roughnessMap)
       model = MatrixModel(model, pos, info)
       PBR_models2.append(model if alternativeMode else (node["_id"], model))
@@ -579,8 +588,9 @@ void main() {
     self.uTexture = uniforms["uTexture"]
     self.uAspect = uniforms["uAspect"]
     self.uEvent = uniforms["uEvent"]
-    self.models = []
-    self.modelPositions = []
+    self.models = {}
+    self.modelPositions = {}
+    self.model_n = 0
     self.aspect = 1
     self.texture = texture
     self.renderer = renderer
@@ -620,11 +630,13 @@ void main() {
     self.models[index] = model
     self.modelPositions[index] = (posX - upX) / L, (posX + 1 + upX) / L, (posY - upY) / L, (posY + 1 + upY) / L, t, self.dir
   def add(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
-    index = len(self.models)
-    self.models.append(None)
-    self.modelPositions.append(None)
+    index = self.model_n
+    self.model_n = index + 1
     self.replace(index, id, posX, posY, L, t, invertX, invertY)
     return index
+  def remove(self, id):
+    self.models.pop(id)
+    self.modelPositions.pop(id)
 
   def draw(self, aspect, eventN, customModels = None):
     self.aspect = aspect
@@ -637,7 +649,7 @@ void main() {
     glUniform1i(self.uTexture, 0)
     glBindTexture(GL_TEXTURE_2D, self.texture)
 
-    models = customModels if customModels is not None else self.models
+    models = customModels if customModels is not None else self.models.values()
     for model in models: model.draw()
 
     glEnable(GL_DEPTH_TEST)
@@ -650,7 +662,7 @@ void main() {
     yUp = y / aspect
     ys = yDown, yUp
     result = -1
-    for x1, x2, y1, y2, t, dir in self.modelPositions:
+    for x1, x2, y1, y2, t, dir in self.modelPositions.values():
       y = ys[dir]
       if x1 <= x and x <= x2 and y1 <= y and y <= y2: result = t
     return result
@@ -858,8 +870,8 @@ def iconGenerator(model, renderer, camera_motor):
     glEnable(GL_DEPTH_TEST)
     model.recalc(identity_mat)
     renderer.noPBR.custom_draw(model, CM.camera, CM.light, CM.VPmatrix, CM.light_source)
-  global dbgTextures
-  dbgTextures = dbgTextures[0], texture
+  # global dbgTextures
+  # dbgTextures = dbgTextures[0], texture
   return texture
 
 
@@ -870,6 +882,7 @@ class TextureChain:
     self.genProgram()
     self.genModel()
     self.FBO = None
+    self.cache = {}
 
   def genProgram(self):
     self.program = _, attribs, uniforms = checkProgram(newProgram("""
@@ -916,6 +929,14 @@ void main() {
     ), (0, 1, 2, 1, 2, 3), self)
 
   def use(self, size, baseColor, textures = (), removeSources = False):
+    key = size, baseColor, textures
+    try: return self.cache[key]
+    except KeyError: pass
+    if baseColor == (1, 1, 1, 1.0) and len(textures) == 1 and textures[0][1] == (1, 1, 1, 1.0):
+      self.cache[key] = texture = textures[0][0]
+      return texture
+    # print(size, baseColor, textures)
+
     W, H = size
     fbo, texture, _ = newFrameBuffer(W, H, False, self.FBO, GL_LINEAR)
     self.FBO = fbo
@@ -960,6 +981,7 @@ void main() {
     # GL_NEAREST_MIPMAP_NEAREST
     glGenerateMipmap(GL_TEXTURE_2D)
 
+    self.cache[key] = texture
     return texture
 
   def postprocessing(self):
@@ -1194,6 +1216,7 @@ void main() {
     lightX, lightY, lightZ = renderer.lightPos
 
     enableProgram(self.program)
+    # enableProgram(self.renderer.noPBR.program)
     glUniform1i(self.uAlbedoMap, 0)
     glUniform1i(self.uNormalMap, 1)
     glUniform3f(self.uCamPos, renderer.camX, renderer.camY, renderer.camZ)

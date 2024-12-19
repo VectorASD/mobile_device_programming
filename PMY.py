@@ -103,7 +103,7 @@ def figures(shaderProgram):
      1,  1, -1,   0, 1, 1, 1,    0, 1, # 11
   ), (
      0,  1,  2,  0,  2,  3, # дно куба
-   # 0,  1,  4,  1,  4,  5, # фронт
+   # 0,  4,  1,  1,  4,  5, # фронт
      8, 10,  9,  9, 10, 11, # фронт
      1,  5,  2,  2,  5,  6, # правый бок
      2,  7,  3,  2,  6,  7, # тыл
@@ -199,6 +199,9 @@ class myRenderer:
     self.findNearestPlanet = lambda: None
     self.lastNearestPlanet = "Sun"
 
+    self.CW_mode = False
+    self.chandelabra = None
+
   def fps(self):
     T = time()
     arr = self.frame_arr
@@ -212,7 +215,9 @@ class myRenderer:
         arr[pos] = fd
         self.frame_pos = (pos + 1) % 10
       self.fpsS = S = sum(arr) * 10 // len(arr)
-      self.glyphs.setText(self.fpsText, "fps: %s" % S, self.W / 16)
+      if self.CW_mode: text = "fps: %s\ncam: %.2f %.2f %.2f\nrot: %.2f %.2f %.2f" % (S, self.camX, self.camY, self.camZ, self.yaw, self.pitch, self.roll)
+      else: text = "fps: %s" % S
+      self.glyphs.setText(self.fpsText, text, self.W / 16)
     return self.fpsS
 
   def setTargetText(self, target):
@@ -274,8 +279,12 @@ class myRenderer:
     gridProgram.add(142, 0.25, 6.75, 8, 2)
     gridProgram.add(45,  6.75, 6.75, 8, 3)
     gridProgram.setDirection(1)
-    gridProgram.add(70,  2.25, 0.25, 10, 4)
-    gridProgram.add(70,  8.75, 0.25, 10, 5)
+    self.deletable = [(), ()]
+    if not self.CW_mode:
+      self.deletable[0] = (
+        gridProgram.add(70,  2.25, 0.25, 10, 4),
+        gridProgram.add(70,  8.75, 0.25, 10, 5),
+      )
 
     self.skyboxN       = 2
     self.currentSkybox = self.skyboxes[self.skyboxN]
@@ -293,15 +302,33 @@ class myRenderer:
     )
 
     self.model_cache = {}
+    self.texture_cache = {}
     if False:
       union, PBR_model, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", None, self)
       SolarSystem = WaitingModel()
       CursWork = CursWorkPBR = WaitingModel()
     else:
       union = PBR_model = character = WaitingModel()
-      SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", planetProcessor, self)
-      root_pos = (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -381, 414, 252, 1)._a_float
-      CursWork, CursWorkPBR, _ = loadRBXM(__resource("CourseWork.rbxm"), "CourseWork.rbxm", None, self, root_pos)
+      if self.CW_mode: SolarSystem = WaitingModel()
+      else: SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", planetProcessor, self)
+
+      root_pos = FLOAT.new_array(16)
+      setIdentityM(root_pos, 0)
+      rotateM(root_pos, 0, -90, 0, 1, 0)
+      translateM(root_pos, 0, -381, 414, 252)
+      def cursWorkProcessor(models, renderer):
+        unionM, PBR_unionM, charModelM, misc = models
+        """
+        for props, pos in misc["lights"]:
+          print("L", pos[:])
+        for props, pos in misc["particles"]:
+          print("P", pos[:])
+        """
+        props, pos = misc["lights"][1]
+        self.chandelabra = pos[12:15]
+        return models
+
+      CursWork, CursWorkPBR, _ = loadRBXM(__resource("CourseWork.rbxm"), "CourseWork.rbxm", cursWorkProcessor, self, root_pos)
     hierarchy(SolarSystem)
 
     union = RotateModel(union, (45, 0, 0))
@@ -345,13 +372,15 @@ class myRenderer:
     glyphs.setHeight(self.W / 16)
     glyphs.setColor(0xadddff)
     self.fpsText = glyphs.add(0, 0, 1, "fps: ?")
-    glyphs.setHeight(self.W / 8)
-    glyphs.setColor(0x0000ad)
-    glyphs.add(2.375, -0.25, 10, "<-")
-    glyphs.add(8.875, -0.25, 10, "->")
-    glyphs.setColor(0xadffdd)
-    glyphs.setHeight(self.W / 12)
-    self.targetText = glyphs.add(3.375, 0.25, 10, "loading...")
+    if not self.CW_mode:
+      glyphs.setHeight(self.W / 8)
+      glyphs.setColor(0x0000ad)
+      L = glyphs.add(2.375, -0.25, 10, "<-")
+      R = glyphs.add(8.875, -0.25, 10, "->")
+      glyphs.setColor(0xadffdd)
+      glyphs.setHeight(self.W / 12)
+      self.targetText = glyphs.add(3.375, 0.25, 10, "loading...")
+      self.deletable[1] = L, R, self.targetText
 
     self.ready2 = True
 
@@ -396,6 +425,7 @@ class myRenderer:
         if name != self.lastNearestPlanet:
           self.lastNearestPlanet = name
           self.changeTarget(name)
+        if name == "Sun" and D < 0: self.changeScene()
 
       td *= 10
       self.moveCam(x * td, y * td, z * td)
@@ -416,6 +446,27 @@ class myRenderer:
     buffer._m_get(arr)
     return bytes(arr)
 
+  def changeScene(self):
+    lightPos = self.chandelabra
+    if lightPos is None: return
+
+    self.CW_mode = True
+
+    self.camMoveEvent = lambda: None
+    self.recalcPlanetPositions = lambda: None
+    self.changeTarget = lambda inc: None
+    self.findNearestPlanet = lambda: None
+
+    remove_texture = self.gridProgram.remove
+    remove_glyph = self.glyphs.delete
+    textures, glyphs = self.deletable
+    for texture in textures: remove_texture(texture)
+    for glyph in glyphs: remove_glyph(glyph)
+
+    self.yaw, self.pitch, self.roll = 180, -24, 0
+    self.setCamPos(4, 20, -48)
+    self.lightPos = lightPos
+
   def drawScene(self):
     # glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glClear(GL_DEPTH_BUFFER_BIT)
@@ -426,7 +477,6 @@ class myRenderer:
     #checkGLError()
 
     self.rbxModel.draw()
-
     self.pbr.draw(self.rbxPBRmodel)
 
     character = self.character
@@ -440,11 +490,13 @@ class myRenderer:
     enableProgram(program.program)
     for model in self.models: model.draw()
 
-    self.noPBR.draw(self.SolarSystem)
-    self.noise.draw()
-
-    self.noPBR.draw(self.CursWork)
-    self.pbr.draw(self.CursWorkPBR)
+    if self.CW_mode:
+      self.noPBR.draw(self.CursWork)
+      # self.pbr.draw(self.CursWorkPBR)
+      self.noPBR.draw(self.CursWorkPBR) # :///
+    else:
+      self.noPBR.draw(self.SolarSystem)
+      self.noise.draw()
 
     self.textureChain.draw_textures()
     self.gridProgram.draw(self.WH_ratio, self.eventN)

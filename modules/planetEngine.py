@@ -627,7 +627,7 @@ def planetProcessor(models, renderer):
     iconCache[name] = icon = iconGenerator(model, renderer, motor)
     return icon
 
-  unionM, PBR_unionM, charModelM = models
+  unionM, PBR_unionM, charModelM, misc = models
   #     unionM.type = UnionModel
   # PBR_unionM.type = UnionModel
   #     unionM.models[i].type = MatrixModel
@@ -714,4 +714,4 @@ def planetProcessor(models, renderer):
 
   unionM = UnionModel(result)
   unionM.draw = drawer
-  return unionM, PBR_unionM, charModelM
+  return unionM, PBR_unionM, charModelM, misc
