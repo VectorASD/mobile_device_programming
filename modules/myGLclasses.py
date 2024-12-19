@@ -524,7 +524,7 @@ class Quaternion:
 class d2textureProgram():
   def __init__(self, texture, size, renderer):
     self.program = _, attribs, uniforms = checkProgram(newProgram("""
-attribute vec2 vPosition;
+attribute vec3 vPosition;
 attribute vec2 vUV;
 attribute float vType;
 attribute float vUp;
@@ -552,7 +552,7 @@ void main() {
   gl_Position = vec4(vPosition.x,
     vUp > 0.5 ? vPosition.y * uAspect + (1. - uAspect)
     : vPosition.y * uAspect - (1. - uAspect),
-  0, 1);
+  vPosition.z, 1);
   vaUV = vUV;
 
   int T = int(vType);
@@ -578,10 +578,10 @@ void main() {
     vType     = attribs["vType"]
     vUp       = attribs["vUp"]
     def func():
-      glVertexAttribPointer(vPosition, 2, GL_FLOAT, False, 6 * 4, 0)
-      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 6 * 4, 2 * 4)
-      glVertexAttribPointer(vType,     1, GL_FLOAT, False, 6 * 4, 4 * 4)
-      glVertexAttribPointer(vUp,       1, GL_FLOAT, False, 6 * 4, 5 * 4)
+      glVertexAttribPointer(vPosition, 3, GL_FLOAT, False, 7 * 4, 0)
+      glVertexAttribPointer(vUV,       2, GL_FLOAT, False, 7 * 4, 3 * 4)
+      glVertexAttribPointer(vType,     1, GL_FLOAT, False, 7 * 4, 5 * 4)
+      glVertexAttribPointer(vUp,       1, GL_FLOAT, False, 7 * 4, 6 * 4)
     self.func = func
     self.location = None
 
@@ -604,44 +604,53 @@ void main() {
   def setUp(self, up): self.up = up
   def setDirection(self, dir): self.dir = dir
 
-  def createModel(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
+  def createModel(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False, z = 0):
+    if L > 0:
+      L /= 2
+      L1 = L - 1
+      pLx, pRx, pLy, pRy = (posX - L) / L, (posX - L1) / L, (posY - L) / -L, (posY - L1) / -L
+    else:
+      ratio = self.aspect
+      posY = (posY + (1 - ratio)) / ratio
+      # pLx, pRx, pLy, pRy = posX + L, posX - L, posY - L, posY + L # L <= 0
+      pLx, pRx, pLy, pRy = posX + L, posX - L, posY - 2 * L, posY # L <= 0
+
     W, H = self.size
-    L /= 2
-    L1 = L - 1
-    pLx, pRx, pLy, pRy = (posX - L) / L, (posX - L1) / L, (posY - L) / -L, (posY - L1) / -L
     y, x = divmod(id, W)
     Lx, Rx, Ly, Ry = x / W, (x + 1) / W, y / H, (y + 1) / H
     if invertX: Lx, Rx = Rx, Lx
     if invertY: Ly, Ry = Ry, Ly
     dir = self.dir
     return Model((
-      pLx, pLy, Lx, Ly, t, dir,
-      pRx, pLy, Rx, Ly, t, dir,
-      pRx, pRy, Rx, Ry, t, dir,
-      pLx, pRy, Lx, Ry, t, dir,
+      pLx, pLy, z, Lx, Ly, t, dir,
+      pRx, pLy, z, Rx, Ly, t, dir,
+      pRx, pRy, z, Rx, Ry, t, dir,
+      pLx, pRy, z, Lx, Ry, t, dir,
     ), (
       0, 1, 2, 0, 2, 3,
     ), self, self.printer)
-  def replace(self, index, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
-    model = self.createModel(id, posX, posY, L, t, invertX, invertY)
+  def replace(self, index, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False, z = 0):
+    try: self.models[index].delete(self.printer)
+    except KeyError: pass
+    model = self.createModel(id, posX, posY, L, t, invertX, invertY, z)
     upXY = self.up
     if type(upXY) in (int, float): upX = upY = upXY
     else: upX, upY = upXY
     self.models[index] = model
-    self.modelPositions[index] = (posX - upX) / L, (posX + 1 + upX) / L, (posY - upY) / L, (posY + 1 + upY) / L, t, self.dir
-  def add(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False):
+    if L > 0: self.modelPositions[index] = (posX - upX) / L, (posX + 1 + upX) / L, (posY - upY) / L, (posY + 1 + upY) / L, t, self.dir
+  def add(self, id, posX, posY, L = 10, t = 0, invertX = False, invertY = False, z = 0):
     index = self.model_n
     self.model_n = index + 1
-    self.replace(index, id, posX, posY, L, t, invertX, invertY)
+    self.replace(index, id, posX, posY, L, t, invertX, invertY, z)
     return index
   def remove(self, id):
     self.models.pop(id)
     self.modelPositions.pop(id)
 
-  def draw(self, aspect, eventN, customModels = None):
+  def draw(self, aspect, eventN, customModels = None, disableDepthTest = True):
     self.aspect = aspect
 
-    glDisable(GL_DEPTH_TEST)
+    if disableDepthTest: glDisable(GL_DEPTH_TEST)
     glDisable(GL_CULL_FACE)
     enableProgram(self.program)
     glUniform1f(self.uAspect, aspect)
@@ -652,7 +661,7 @@ void main() {
     models = customModels if customModels is not None else self.models.values()
     for model in models: model.draw()
 
-    glEnable(GL_DEPTH_TEST)
+    if disableDepthTest: glEnable(GL_DEPTH_TEST)
     glEnable(GL_CULL_FACE)
 
   def checkPosition(self, x, y):

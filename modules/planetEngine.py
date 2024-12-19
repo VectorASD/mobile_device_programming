@@ -591,22 +591,13 @@ def planetProcessor(models, renderer):
 
   def updateIcons():
     set_pos_WH = renderer.textureChain.set_pos_WH
-    camera_dist = renderer.camera_dist
+    calc_3d_to_2d = renderer.calc_3d_to_2d
     setPosition = renderer.glyphs.setPosition
     W = renderer.W
     ratio = renderer.WH_ratio
     for name, (radius, model, n, n2) in selectedPlanets.items():
-      x, y, z = pos = model.translate
-      dist = camera_dist(pos)
-      dist = max(dist / radius, 2)
-      size = 1 / dist
-      pos = (x, y, z, 1)._a_float
-      pos2d = FLOAT.new_array(4)
-      multiplyMV(pos2d, 0, renderer.MVPmatrix, 0, pos, 0)
-      x, y, _, w = pos2d
-      x /= w
-      y /= w
-      visible = w > 0 and size > 0.05
+      x, y, z, size = calc_3d_to_2d(model.translate, radius)
+      visible = z <= 1 and size > 0.05
       size2 = max(size, 0.05)
       set_pos_WH(n, x, y, size, size, visible)
       # set_pos_WH(n, x, y, size2, size2, w > 0)

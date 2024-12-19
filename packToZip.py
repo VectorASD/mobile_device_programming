@@ -30,6 +30,7 @@ paths = (
   ("resources/SolarSystem.rbxm", None),
   ("resources/emoji2.txt", None),
   ("resources/CourseWork.rbxm", None),
+  ("resources/fire.png", None),
 
   ("EulerRotators.py", None),
   ("resources/emoji.txt", None),

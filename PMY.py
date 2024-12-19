@@ -249,9 +249,11 @@ class myRenderer:
     textures = __resource("textures.png")
     skybox_labeled = __resource("skybox_labeled.png")
     skybox_space = __resource("skybox_space.webp")
+    candle_sprite = __resource("fire.png")
     self.mainTexture = mainTextures = newTexture2(textures)
     skyboxLabeled = newTexture2(skybox_labeled)
     skyboxSpace   = newTexture2(skybox_space)
+    candleSprite  = newTexture2(candle_sprite)
 
     # все шейдерные программы в одном месте
 
@@ -271,6 +273,7 @@ class myRenderer:
     glyphs.printer = False
     self.colorama = Colorama(self)
     self.noise = Noise(self)
+    self.candleSprite = d2textureProgram(candleSprite, (8, 6), self)
 
     # настройка шейдерных программ
 
@@ -324,8 +327,7 @@ class myRenderer:
         for props, pos in misc["particles"]:
           print("P", pos[:])
         """
-        props, pos = misc["lights"][1]
-        self.chandelabra = pos[12:15]
+        self.chandelabra = (pos[12:15] for props, pos in misc["lights"])
         return models
 
       CursWork, CursWorkPBR, _ = loadRBXM(__resource("CourseWork.rbxm"), "CourseWork.rbxm", cursWorkProcessor, self, root_pos)
@@ -450,22 +452,29 @@ class myRenderer:
     lightPos = self.chandelabra
     if lightPos is None: return
 
-    self.CW_mode = True
+    def f():
+      self.CW_mode = True
 
-    self.camMoveEvent = lambda: None
-    self.recalcPlanetPositions = lambda: None
-    self.changeTarget = lambda inc: None
-    self.findNearestPlanet = lambda: None
+      self.camMoveEvent = lambda: None
+      self.recalcPlanetPositions = lambda: None
+      self.changeTarget = lambda inc: None
+      self.findNearestPlanet = lambda: None
 
-    remove_texture = self.gridProgram.remove
-    remove_glyph = self.glyphs.delete
-    textures, glyphs = self.deletable
-    for texture in textures: remove_texture(texture)
-    for glyph in glyphs: remove_glyph(glyph)
+      remove_texture = self.gridProgram.remove
+      remove_glyph = self.glyphs.delete
+      textures, glyphs = self.deletable
+      for texture in textures: remove_texture(texture)
+      for glyph in glyphs: remove_glyph(glyph)
 
-    self.yaw, self.pitch, self.roll = 180, -24, 0
-    self.setCamPos(4, 20, -48)
-    self.lightPos = lightPos
+      self.yaw, self.pitch, self.roll = 180, -24, 0
+      self.setCamPos(4, 20, -48)
+      self.lightPos = lightPos[1]
+
+      candleSprite = self.candleSprite
+      candleSprite.printer = False
+      candleSprite.aspect = self.WH_ratio
+      self.candleSprites = ((candleSprite.add(0, 0, 0, -0.2), lightPos[i]) for i in range(3))
+    runOnGLThread(self.view, f)
 
   def drawScene(self):
     # glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -494,6 +503,13 @@ class myRenderer:
       self.noPBR.draw(self.CursWork)
       # self.pbr.draw(self.CursWorkPBR)
       self.noPBR.draw(self.CursWorkPBR) # :///
+      candleSprite = self.candleSprite
+      iteration = int(time() * 48)
+      calc_3d_to_2d = self.calc_3d_to_2d
+      for n, pos in self.candleSprites:
+        x, y, z, size = calc_3d_to_2d(pos, 0.2, 0)
+        candleSprite.replace(n, (iteration + n * 120) % 48, x, y, -size, 0, False, False, z)
+      candleSprite.draw(self.WH_ratio, 0, None, False)
     else:
       self.noPBR.draw(self.SolarSystem)
       self.noise.draw()
@@ -615,6 +631,17 @@ class myRenderer:
   def camera_dist2_xyz(self, x, y, z):
     camX, camY, camZ = self.camera
     return (x - camX) ** 2 + (y - camY) ** 2 + (z - camZ) ** 2
+
+  def calc_3d_to_2d(self, pos, radius, min = 2):
+    x, y, z = pos
+    dist = self.camera_dist(pos)
+    dist = max(dist / radius, min)
+    size = 1 / dist
+    pos = (x, y, z, 1)._a_float
+    pos2d = FLOAT.new_array(4)
+    multiplyMV(pos2d, 0, self.MVPmatrix, 0, pos, 0)
+    x, y, z, w = pos2d
+    return x/w, y/w, z/w, size
 
   reverse = {
     "cr": onSurfaceCreated,
