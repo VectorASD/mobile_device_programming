@@ -87,36 +87,36 @@ def fix_tangent(VBOdata, IBOdata):
 
 def meshReader2_00(mesh, usePBR):
   sizeof_MeshHeader, sizeof_Vertex, sizeof_Face, numVerts, numFaces = mesh.unpack("<HBBII")
-  if sizeof_MeshHeader != 12: exit("Странный sizeof_MeshHeader v2.00: %s" % sizeof_MeshHeader)
-  if sizeof_Vertex not in (36, 40): exit("Странный sizeof_Vertex: %s" % sizeof_Vertex)
-  if sizeof_Face != 12: exit("Странный sizeof_Face: %s" % sizeof_Face)
+  if sizeof_MeshHeader != 12: HALT("Странный sizeof_MeshHeader v2.00: %s" % sizeof_MeshHeader)
+  if sizeof_Vertex not in (36, 40): HALT("Странный sizeof_Vertex: %s" % sizeof_Vertex)
+  if sizeof_Face != 12: HALT("Странный sizeof_Face: %s" % sizeof_Face)
   VBOdata = readVertexes36(mesh, usePBR, numVerts) if sizeof_Vertex == 36 else readVertexes40(mesh, usePBR, numVerts)
   IBOdata = meshFaces(mesh, numFaces)
   # if VBOdata and VBOdata[8:11] == (0, 0, 0): VBOdata, IBOdata = fix_tangent(VBOdata, IBOdata)
   what = mesh.read()
-  if what: exit("Не до конца считанная сетка v2.00: %s" % mesh.hex())
+  if what: HALT("Не до конца считанная сетка v2.00: %s" % mesh.hex())
   return VBOdata, IBOdata
 
 def meshReader3_00(mesh, usePBR):
   sizeof_MeshHeader, sizeof_Vertex, sizeof_Face, sizeof_LOD, numLODs, numVerts, numFaces = mesh.unpack("<HBBHHII")
-  if sizeof_MeshHeader != 16: exit("Странный sizeof_MeshHeader v3.00: %s" % sizeof_MeshHeader)
-  if sizeof_Vertex not in (36, 40): exit("Странный sizeof_Vertex: %s" % sizeof_Vertex)
-  if sizeof_Face != 12: exit("Странный sizeof_Face: %s" % sizeof_Face)
-  if sizeof_LOD != 4: exit("Странный sizeof_LOD: %s" % sizeof_LOD)
+  if sizeof_MeshHeader != 16: HALT("Странный sizeof_MeshHeader v3.00: %s" % sizeof_MeshHeader)
+  if sizeof_Vertex not in (36, 40): HALT("Странный sizeof_Vertex: %s" % sizeof_Vertex)
+  if sizeof_Face != 12: HALT("Странный sizeof_Face: %s" % sizeof_Face)
+  if sizeof_LOD != 4: HALT("Странный sizeof_LOD: %s" % sizeof_LOD)
   # a, b, c = sizeof_Vertex * numVerts, sizeof_Face * numFaces, sizeof_LOD * numLODs
   # print("Vertexes size:", a)
   # print("Faces size:", b)
   # print("LODs size:", c)
   # print("all:", a + b + c)
   # print("доступно:", len(mesh.read())) сошлось с параметром "all"
-  print("    Вершин:", numVerts, "Полигонов:", numFaces, "Уровней детализации:", numLODs - 1)
   VBOdata = readVertexes36(mesh, usePBR, numVerts) if sizeof_Vertex == 36 else readVertexes40(mesh, usePBR, numVerts)
   IBOdata = meshFaces(mesh, numFaces)
   # if VBOdata and VBOdata[8:11] == (0, 0, 0): VBOdata, IBOdata = fix_tangent(VBOdata, IBOdata)
   LODs = mesh.unpack("<%sI" % numLODs)
-  print("    LODs:", LODs)
+  # print("    Вершин:", numVerts, "Полигонов:", numFaces, "Уровней детализации:", numLODs - 1)
+  # print("    LODs:", LODs)
   what = mesh.read()
-  if what: exit("Не до конца считанная сетка v3.00: %s" % mesh.hex())
+  if what: HALT("Не до конца считанная сетка v3.00: %s" % mesh.hex())
   a, b = LODs[0], LODs[1]
   IBOdata = IBOdata[a*3 : b*3]
   return VBOdata, IBOdata
@@ -127,7 +127,7 @@ def meshReaderBase4_5(mesh, usePBR, numVerts, numFaces, numLODs, numBones):
   IBOdata = meshFaces(mesh, numFaces)
   # if VBOdata and VBOdata[8:11] == (0, 0, 0): VBOdata, IBOdata = fix_tangent(VBOdata, IBOdata)
   LODs = mesh.unpack("<%sI" % numLODs)
-  print("    LODs:", LODs)
+  # print("    LODs:", LODs)
   a, b = LODs[0], LODs[1] # выбираю LOD с самым высоким разрешением
   IBOdata = IBOdata[a*3 : b*3]
   return VBOdata, IBOdata
@@ -135,13 +135,13 @@ def meshReaderBase4_5(mesh, usePBR, numVerts, numFaces, numLODs, numBones):
 def meshReader4_00(mesh, usePBR):
   # print("🙂‍↔️🙂‍↔️🙂‍↔️")
   sizeof_MeshHeader, lodType, numVerts, numFaces, numLODs, numBones, sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs, unused = mesh.unpack("<HHIIHHIHBB")
-  if sizeof_MeshHeader != 24: exit("Странный sizeof_MeshHeader v4.00: %s" % sizeof_MeshHeader)
-  if unused: exit("Странный unused: %s" % unused)
+  if sizeof_MeshHeader != 24: HALT("Странный sizeof_MeshHeader v4.00: %s" % sizeof_MeshHeader)
+  if unused: HALT("Странный unused: %s" % unused)
 
   lodTypeName = {0: "None", 1: "Unknown", 2: "RbxSimplifier", 3: "ZeuxMeshOptimizer"}.get(lodType, "?%s" % lodType)
-  print("    LOD type:", lodTypeName)
-  print("    Вершин:", numVerts, "Полигонов:", numFaces, "Уровней детализации:", numLODs - 1)
-  print("    Костей:", numBones, "...", sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs)
+  # print("    LOD type:", lodTypeName)
+  # print("    Вершин:", numVerts, "Полигонов:", numFaces, "Уровней детализации:", numLODs - 1)
+  # print("    Костей:", numBones, "...", sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs)
 
   VBOdata, IBOdata = meshReaderBase4_5(mesh, usePBR, numVerts, numFaces, numLODs, numBones)
   # print("🙂‍↔️🙂‍↔️🙂‍↔️")
@@ -150,8 +150,8 @@ def meshReader4_00(mesh, usePBR):
 def meshReader5_00(mesh, usePBR):
   # print("🙂‍↔️🔥🙂‍↔️")
   sizeof_MeshHeader, lodType, numVerts, numFaces, numLODs, numBones, sizeof_boneNamesBuffer, numSubsets, numHighQualityLODs, unusedPadding, facsDataFormat, facsDataSize = mesh.unpack("<HHIIHHIHBBII")
-  if sizeof_MeshHeader != 32: exit("Странный sizeof_MeshHeader v5.00: %s" % sizeof_MeshHeader)
-  if unusedPadding: exit("Странный unusedPadding: %s" % unusedPadding)
+  if sizeof_MeshHeader != 32: HALT("Странный sizeof_MeshHeader v5.00: %s" % sizeof_MeshHeader)
+  if unusedPadding: HALT("Странный unusedPadding: %s" % unusedPadding)
 
   lodTypeName = {0: "None", 1: "Unknown", 2: "RbxSimplifier", 3: "ZeuxMeshOptimizer"}.get(lodType, "?%s" % lodType)
   print("    LOD type:", lodTypeName)

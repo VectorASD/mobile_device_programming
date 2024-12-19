@@ -59,3 +59,44 @@ pi180 = pi / 180
 log = Math._mw_log(DOUBLE)
 LOG_2 = log(2)
 log2 = lambda n: log(n) / LOG_2
+
+
+
+from android.content.Context import Context
+from java.lang.ClassLoader import ClassLoader
+from dalvik.system.DexClassLoader import DexClassLoader
+from java.io.File import jFile
+
+MODE_PRIVATE = Context._f_MODE_PRIVATE # 0
+getDir = Context._mw_getDir(str, int) # name, mode
+getClassLoader = Context._mw_getClassLoader()
+loadClass = ClassLoader._mw_loadClass(str) # name
+
+def dex(ctx):
+  # SCL = ClassLoader._m_getSystemClassLoader()
+  # print(SCL)
+  CL = getClassLoader.wrap(ctx)().cast(ClassLoader)
+  dexAssertPath = "/sdcard/JavaNIDE/SC2/jadx-1.5.1.dex"
+  dexPath = jFile(getDir.wrap(ctx)("dex", MODE_PRIVATE), "name.dex")._m_getAbsolutePath()
+  dexOutputDir = getDir.wrap(ctx)("outdex", MODE_PRIVATE)._m_getAbsolutePath()
+  T = time()
+  with open(dexAssertPath, "rb") as file: dexData = file.read()
+  T2 = time()
+  with open(dexPath, "wb") as file: file.write(dexData)
+  T3 = time()
+  classes = DexClassLoader(dexPath, dexOutputDir, str, CL)
+  T4 = time()
+  print("dex:", len(dexData), "b.")
+  print(T2 - T)
+  print(T3 - T2)
+  print(T4 - T3)
+  print("all:", T4 - T)
+  classLoader = loadClass.wrap(classes)
+  JadxArgs = classLoader("jadx.api.JadxArgs")
+  JadxDecompiler = classLoader("jadx.api.JadxDecompiler")
+  print(JadxArgs)
+  print(JadxDecompiler)
+  for name in sorted(JadxArgs.methods()): print(name)
+  jadxArgs = JadxArgs()
+  
+  HALT(0)

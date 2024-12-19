@@ -18,6 +18,7 @@ def NetworkRequests(url, contentType):
   conn._m_setReadTimeout(5000)
   conn._m_setInstanceFollowRedirects(False)
   status = conn._m_getResponseCode()
+  # print("status:", status)
   # print(conn)
   # print(conn._m_getContentType())
 
@@ -109,13 +110,13 @@ def cdnLoader(asset):
   # print("NETWORK!")
   status, response = NetworkRequests(assetURL, "application/json")
   print("status:", status)
-  if status not in range(200, 300): exit("Status error: %s\n%s" % (status, response))
+  if status not in range(200, 300): HALT("Status error: %s\n%s" % (status, response))
   obj = json.load(response)
-  print(obj)
+  # print(obj)
 
   status, content = NetworkRequests(obj["location"], "binary/octet-stream")
   print("status:", status)
-  if status not in range(200, 300): exit("Status error: %s\n%s" % (status, response))
+  if status not in range(200, 300): HALT("Status error: %s\n%s" % (status, response))
 
   storager.put(assetURL, response, content)
   return content
@@ -146,13 +147,13 @@ def cdnLoader(asset):
 def String(content): # 0x01
   L = content.unpack("<I")[0]
   str = content.read(L)
-  if len(str) < L: exit("Неудачная попытка считывания строки длины %s: %r" % (L, str))
+  if len(str) < L: HALT("Неудачная попытка считывания строки длины %s: %r" % (L, str))
   return str if any(i < 32 for i in str) else str.decode("utf-8")
 
 def Bool(content, count): # 0x02
   arr = content.read(count)
   for byte in arr:
-    if byte not in range(2): exit("Недопустимое Bool-значение: %s" % byte)
+    if byte not in range(2): HALT("Недопустимое Bool-значение: %s" % byte)
   return map(bool, arr)
 
 def Int32(content, count): # 0x03
@@ -215,7 +216,7 @@ def CFrame(content, count): # 0x10
     if ID:
       try: rotator = CFrameRotators[ID]
       except KeyError: rotator = None
-      if rotator is None: exit("Недопустимое значение вращателя CFrame: %s" % ID)
+      if rotator is None: HALT("Недопустимое значение вращателя CFrame: %s" % ID)
       rotators.append(rotator)
     else: rotators.append(content.unpack("<9f"))
   return (vec + rot for rot, vec in zip(rotators, Vector3(content, count)))
@@ -258,9 +259,9 @@ def SharedString(content, count, SStrings): # 0x1c
 def OptionalCoordinateFrame(content, count): # 0x1e
   # content = BytesIO(bytes.fromhex("10 0a 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 7f 00 00 00 00 00 00 00 02 01 00".replace(" ", "")))
   # count = 2
-  if content.read(1)[0] != 0x10: exit("Ожидался CFrame внутри OptionalCoordinateFrame")
+  if content.read(1)[0] != 0x10: HALT("Ожидался CFrame внутри OptionalCoordinateFrame")
   cframes = CFrame(content, count)
-  if content.read(1)[0] != 0x02: exit("Ожидался Bool внутри OptionalCoordinateFrame")
+  if content.read(1)[0] != 0x02: HALT("Ожидался Bool внутри OptionalCoordinateFrame")
   have_a_value = Bool(content, count)
   return zip(have_a_value, cframes)
 
@@ -329,31 +330,31 @@ def META(content):
     key, value = String(content), String(content)
     try:
       conflict = meta[key]
-      exit("Конфликтный ключ %r: %r <-> %r" % (key, conflict, value))
+      HALT("Конфликтный ключ %r: %r <-> %r" % (key, conflict, value))
     except KeyError: meta[key] = value
   what = content.read()
-  if what: exit("Не до конца считанный META-чанк: %s" % what)
+  if what: HALT("Не до конца считанный META-чанк: %s" % what)
   return meta
 
 def SSTR(content, SStrings): # Shared STRings
   version, count = content.unpack("<II")
-  if version != 0: exit("Странная версия SSTR-чанка: %s" % version)
+  if version != 0: HALT("Странная версия SSTR-чанка: %s" % version)
   for i in range(count):
     hash, str = content.read(16), String(content)
     if dbgPrint: print("%s %r" % (hash.hex(), str))
     SStrings.append(str)
   what = content.read()
-  if what: exit("Не до конца считанный SSTR-чанк: %s" % what)
+  if what: HALT("Не до конца считанный SSTR-чанк: %s" % what)
 
 def INST(content):
   classID = content.unpack("<I")[0]
   className = String(content)
   objectFormat, count = content.unpack("<BI")
-  if objectFormat not in range(2): exit("Неизвестный формат INST-чанка: %s" % objectFormat)
+  if objectFormat not in range(2): HALT("Неизвестный формат INST-чанка: %s" % objectFormat)
   referents = Referent(content, count)
   markers = content.unpack("<%sB" % count) if objectFormat else None
   what = content.read()
-  if what: exit("Не до конца считанный INST-чанк: %s" % what)
+  if what: HALT("Не до конца считанный INST-чанк: %s" % what)
   return classID, className, objectFormat, referents, markers
 
 typesAll = set()
@@ -366,7 +367,7 @@ def PROP(content, CTX):
   typesAll.add(typeID)
 
   try: inst = classes[classID]
-  except KeyError: exit("Несуществующий classID в PROP-чанке: %s" % classID)
+  except KeyError: HALT("Несуществующий classID в PROP-чанке: %s" % classID)
   className, objectFormat, referents, markers = inst
   count = len(referents)
 
@@ -386,10 +387,10 @@ def PROP(content, CTX):
   for id, value in zip(referents, values):
     # values2.append(value)
     try: node = instances[id]
-    except KeyError: exit("Нет экземпляра с таким id: %s" % id)
+    except KeyError: HALT("Нет экземпляра с таким id: %s" % id)
     try:
       conflict = node["_props"][propertyName]
-      exit("Повторяющийся параметр %r: %r <-> %r" % (propertyName, conflict, value))
+      HALT("Повторяющийся параметр %r: %r <-> %r" % (propertyName, conflict, value))
     except KeyError:
       #if dbgType is None or typeID == dbgType or propertyName == "Name":
       if propertyName == "Name": node["_name"] = checkString((typeID, value))
@@ -398,7 +399,7 @@ def PROP(content, CTX):
   if dbgType is None:
     if Type is not None:
       what = content.read()
-      if what: exit("Не до конца считанный PROP-чанк: %s" % what)
+      if what: HALT("Не до конца считанный PROP-чанк: %s" % what)
       # print(tuple(values2))
       # print()
   elif typeID == dbgType:
@@ -408,22 +409,22 @@ def PROP(content, CTX):
 
 def PRNT(content, instances): # parents
   version, count = content.unpack("<BI")
-  if version != 0: exit("Странная версия PRNT-чанка: %s" % version)
+  if version != 0: HALT("Странная версия PRNT-чанка: %s" % version)
   childs = Referent(content, count)
   parents = Referent(content, count)
   for child, parent in zip(childs, parents):
     try: L = instances[child]
-    except KeyError: exit("Нет потомка с таким id: %s" % child)
+    except KeyError: HALT("Нет потомка с таким id: %s" % child)
     try: R = instances[parent]
-    except KeyError: exit("Нет родителя с таким id: %s" % parent)
-    if L["_parent"] is not None: exit("Повторное присвоение родителя: %s %s %s %s" % (child, parent, L, R))
+    except KeyError: HALT("Нет родителя с таким id: %s" % parent)
+    if L["_parent"] is not None: HALT("Повторное присвоение родителя: %s %s %s %s" % (child, parent, L, R))
     L["_parent"] = R
     R["_childs"].append(L)
     # print(child, parent, L, R)
   for node in instances.values():
-    if node["_parent"] is None: exit("Существует узел без родителя: %s" % node)
+    if node["_parent"] is None: HALT("Существует узел без родителя: %s" % node)
   what = content.read()
-  if what: exit("Не до конца считанный PRNT-чанк: %s" % what)
+  if what: HALT("Не до конца считанный PRNT-чанк: %s" % what)
   return childs, parents
 
 
@@ -455,7 +456,7 @@ def Chunk(file, CTX):
   name, compressL, uncompressL, reserved = file.unpack("<4sII4s")
   while name[-1] == 0: name = name[:-1]
   if dbgPrint: print("Чанк %r длины %s -> %s" % (name, compressL, uncompressL))
-  if reserved != b"\0" * 4: exit("Странный reserved чанка: %s" % reserved.hex())
+  if reserved != b"\0" * 4: HALT("Странный reserved чанка: %s" % reserved.hex())
 
   compressed = compressL > 0
   dataL = compressL if compressed else uncompressL
@@ -480,14 +481,14 @@ def Chunk(file, CTX):
     inst = className, objectFormat, referents, markers
     try:
       conflict = classes[classID]
-      exit("Конфликтный classID %r: %r <-> %r" % (classID, conflict, inst))
+      HALT("Конфликтный classID %r: %r <-> %r" % (classID, conflict, inst))
     except KeyError: classes[classID] = inst
 
     for referent in referents:
       data = {"_id": referent, "_parent": None, "_childs": [], "_class": className, "_name": "🤔", "_props": {}, "_refs0": [], "_refs1": [], "_refs": {}}
       try:
         conflict = instances[referent]
-        exit("Конфликтный referent %r: %r <-> %r" % (referent, conflict, data))
+        HALT("Конфликтный referent %r: %r <-> %r" % (referent, conflict, data))
       except: instances[referent] = data
   elif name == b"PROP":
     PROP(content, CTX)
@@ -496,7 +497,7 @@ def Chunk(file, CTX):
   elif name == b"END":
     if data != b'</roblox>': print("Странное окончание: %r" % data)
     return True
-  else: exit("UNKNOWN CHUNK (%r): %r" % (name, data))
+  else: HALT("UNKNOWN CHUNK (%r): %r" % (name, data))
 
 def rbxmReader(resource):
   SStrings = []
@@ -506,14 +507,14 @@ def rbxmReader(resource):
   CTX = (SStrings, classes, root, instances)
 
   file = BytesIO(resource)
-  if file.read(8) != b'<roblox!': exit("Это не rbxm!")
+  if file.read(8) != b'<roblox!': HALT("Это не rbxm!")
   sign = file.read(6).hex()
-  if sign != "89ff0d0a1a0a": exit("Неверная подпись: %s" % sign)
+  if sign != "89ff0d0a1a0a": HALT("Неверная подпись: %s" % sign)
   version, classes, instancesL, reserved = file.unpack("<Hii8s")
   print("Классов:", classes)
   print("Экземпляров:", instancesL)
-  if version != 0: exit("Странная версия заголовка: %s" % version)
-  if reserved != b"\0" * 8: exit("Странный reserved заголовка: %s" % reserved.hex())
+  if version != 0: HALT("Странная версия заголовка: %s" % version)
+  if reserved != b"\0" * 8: HALT("Странный reserved заголовка: %s" % reserved.hex())
   while True:
     end = Chunk(file, CTX)
     if end: break
@@ -543,7 +544,7 @@ def rbxmReader(resource):
 
   return root
 
-def loadRBXM(resource, name, cb, renderer):
+def loadRBXM(resource, name, cb, renderer, root_pos = None):
   union = WaitingModel()
   PBR_union = WaitingModel()
   charModel = WaitingModel()
@@ -558,8 +559,8 @@ def loadRBXM(resource, name, cb, renderer):
       root = rbxmReader(resource)
       cache[name] = root
     # printTree(root)
-    models = modelLoader(root, name, renderer)
-    unionM, PBR_unionM, charModelM = cb(models, renderer) if cb else models
+    models = modelLoader(root, name, renderer, root_pos)
+    unionM, PBR_unionM, charModelM, misc = cb(models, renderer) if cb else models
     union.setModel(unionM)
     PBR_union.setModel(PBR_unionM)
     charModel.setModel(charModelM)

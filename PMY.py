@@ -103,7 +103,7 @@ def figures(shaderProgram):
      1,  1, -1,   0, 1, 1, 1,    0, 1, # 11
   ), (
      0,  1,  2,  0,  2,  3, # дно куба
-   # 0,  1,  4,  1,  4,  5, # фронт
+   # 0,  4,  1,  1,  4,  5, # фронт
      8, 10,  9,  9, 10, 11, # фронт
      1,  5,  2,  2,  5,  6, # правый бок
      2,  7,  3,  2,  6,  7, # тыл
@@ -164,300 +164,6 @@ def hierarchy(model, level = ""): # TODO
 
 
 
-def planetProcessor(models, renderer):
-  def hypot(size):
-    x, y, z = size
-    return x ** 2 + y ** 2 + z ** 2
-  def haloSort():
-    def dist(pos):
-      x, y, z = pos
-      # return (x - cX) ** 2 + (y - cY) ** 2 + (z - cZ) ** 2
-      return (x - cX) * fwX + (y - cY) * fwY + (z - cZ) * fwZ
-    cX, cY, cZ = renderer.camera
-    fwX, fwY, fwZ = renderer.forward
-    nonlocal haloDraws
-    halos2 = sorted(halos, key = lambda halo: dist(halo._pos.translate), reverse = True)
-    haloDraws = [halo.draw for halo in halos2]
-  def drawer():
-    for draw in planetDraws: draw()
-    glDepthMask(False)
-    for draw in haloDraws: draw()
-    glDepthMask(True)
-  def recalcPlanetPositions():
-    nonlocal day, prevTargetPos
-
-    updateIcons()
-
-    SunX, SunY, SunZ = sunPosition
-    positions = planetPositions(day)
-    for name in planetNames:
-      pos = positions[name]
-      x, z, y = pos[:3]
-      PlanetX = SunX + x * step
-      PlanetY = SunY + y * step
-      PlanetZ = SunZ + z * step
-      radius, model = planets[name]
-      radius /= dist_div
-      model.update2((PlanetX, PlanetY, PlanetZ))
-      for moonName in moonNames.get(name, ()):
-        x, z, y = positions[moonName][:3]
-        MoonX = PlanetX + x * radius
-        MoonY = PlanetY + y * radius
-        MoonZ = PlanetZ + z * radius
-        planets[moonName][1].update2((MoonX, MoonY, MoonZ))
-    day += renderer.td
-
-    radius, model = planets[target]
-    x, y, z = model.translate
-    if prevTargetPos is None:
-      fx, fy, fz = renderer.forward
-      r = radius * 2.5
-      renderer.setCamPos(x - fx * r, y - fy * r, z - fz * r)
-    elif type(prevTargetPos) is not int:
-      px, py, pz = prevTargetPos
-      dx, dy, dz = x - px, y - py, z - pz
-      if dx or dy or dz:
-        renderer.moveCam(dx, dy, dz)
-    prevTargetPos = x, y, z
-
-    # step = (sunS / sunRadius) / max(1, 10 - day / 2)
-
-  def changeTarget(inc):
-    nonlocal target, targetN, prevTargetPos
-    if type(inc) is str:
-      try: targetN = targetNames.index(inc)
-      except ValueError: return
-      target = inc
-      radius, model = planets[target]
-      prevTargetPos = model.translate
-    else:
-      targetN = (targetN + (1 if inc else -1)) % len(targetNames)
-      target = targetNames[targetN]
-      prevTargetPos = None
-    renderer.setTargetText(target)
-  def findNearestPlanet():
-    if type(prevTargetPos) is not tuple:
-      return
-    camera_dist = renderer.camera_dist
-    mi = 1e400
-    result = None
-    for name in targetNames:
-      radius, model = planets[name]
-      D = camera_dist(model.translate) - radius
-      if D < mi:
-        mi = D
-        result = D, name, radius, model
-    center_D = camera_dist((0, 0, 0))
-    if center_D < mi: result = (center_D,) + result[1:]
-    return result
-
-  # Индекс неиспользованных в двигателе планет (от большей к меньшей):
-  # Название модели в реестре SolarSystem.rbxm - описание
-
-  # Ganymede - спутник Юпитера
-  # Titan - спутник Сатурна
-  # Callisto - спутник Юпитера
-  # Io - спутник Юпитера
-#✅ Moon (Luna) - ну понятно
-  # Europa - спутник Юпитера
-  # Triton - спутник Нептуна
-  # Haumea — карликовая планета Солнечной системы, классифицирующаяся как плутоид, транснептуновый объект (ТНО)
-  # Titania - спутник Урана
-  # Rhea - спутник Сатурна
-  # Oberon - спутник Урана
-  # Iapetus - спутник Сатурна
-  # Makemake - карликовая планета Солнечной системы, относится к транснептуновым объектам (ТНО), плутоидам. Является крупнейшим из известных классических объектов пояса Койпера
-  # 2007 OR₁₀ - одна из крупнейших карликовых планет Солнечной системы
-  # Charon - спутник Плутона
-  # Umbriel - спутник Урана
-  # Ariel - спутник Урана
-  # Dione - спутник Сатурна
-  # Quaoar - транснептуновый объект, один из крупнейших объектов в поясе Койпера, часто классифицируется как карликовая планета
-  # Tethys - (Те́фия) спутник Сатурна
-  # Sedna - транснептуновый объект. Была открыта 14 ноября 2003 года американскими наблюдателями Брауном, Трухильо и Рабиновицем
-  # Orcus - Орк (90482 Orcus) — крупный транснептуновый объект из пояса Койпера, вероятно, являющийся карликовой планетой
-  # Salacia - Салация (120347 Salacia по каталогу Центра малых планет) — транснептуновый объект, расположенный в поясе Койпера. Классифицируется и как кьюбивано (MPC), и как отделённый объект (DES). Он был обнаружен 22 сентября 2004 года группой учёных из Паломарской обсерватории. Обладает одним из самых низких значений альбедо среди крупных ТНО. Майкл Браун считает его кандидатом на статус карликовой планеты
-  # 2002 MS4 - крупный транснептуновый объект в поясе Койпера. Он был открыт 18 июня 2002 года американскими астрономами Чедвиком Трухильо и Майклом Брауном
-  # Varda - Варда (174567) — транснептуновый объект, кандидат в карликовые планеты. Открыт 21 июня 2003 года Джеффри Ларсеном по проекту Spacewatch
-  # Ixion - Иксион (28978) — объект пояса Койпера. Является одним из крупнейших плутино (то есть транснептуновым объектом, орбита которого сходна с орбитой Плутона)
-  # Dysnomia - спутник карликовой планеты (136199) Эрида, первоначально названный S/2005 (2003 UB313)
-  # 2014 UZ₂₂₄ — крупный транснептуновый объект в поясе Койпера, кандидат в карликовые планеты. Открыт группой астрономов в рамках проекта Pan-STARRS 19 августа 2014 года посредством камеры DECam телескопа имени Виктора Бланко в обсерватории Серро-Тололо в Чили
-  # Varuna - (20000) Ва́руна — транснептуновый объект, один из крупнейших кьюбивано (классических объектов пояса Койпера), отделённый объект
-  # Vesta - Веста (официальное название — 4 Веста; англ. 4 Vesta) — астероид, движущийся вблизи внутренней границы Главного пояса астероидов. Входит в семейство Весты (вестоиды)
-  # Pallas - Паллада (Pallas) — крупнейший астероид Главного пояса астероидов. Открыт 28 марта 1802 года Генрихом Вильгельмом Ольберсом и назван в честь древнегреческой богини Афины Паллады
-  # Enceladus - спутник Сатурна
-  # Chaos - Хаос (19521) — крупный транснептуновый объект в поясе Койпера. Был открыт в 1998 году в рамках проекта «Глубокий обзор эклиптики», в обсерватории Китт Пик на 4-метровом телескопе
-  # Miranda - спутник Урана
-  # Vanth - единственный известный спутник транснептунового объекта (90482) Орк. Его обнаружили Майкл Браун и Т. А. Суер, изучая изображения, полученные при помощи космического телескопа «Хаббл» 13 ноября 2005 года
-  # Hygiea - карликовая планета в Солнечной системе, четвёртое по величине небесное тело в главном поясе астероидов между Марсом и Юпитером
-  # Proteus - спутник Нептуна
-  # Huya - Huya (38628) — крупный транснептуновый объект, относящийся к группе плутино и являющийся кандидатом в карликовые планеты. Он обращается в резонансе 2:3 с Нептуном
-  # Mimas - спутник Сатурна
-  # Ilmarë — спутник транснептунового объекта (кьюбивано) (174567) Варда. Был открыт 26 апреля 2009 года командой астрономов под руководством Кита С. Нолла на изображениях, поступающих с космического телескопа «Хаббл»
-  # Nereid - (Нереида) спутник Нептуна
-  # Actaea - Актея (120347 Salacia I Actaea) — спутник транснептунового объекта (120347) Салация. Был открыт 21 июля 2006 года на снимках телескопа «Хаббл». 13 18 февраля 2011 года спутнику присвоено название Актея — по имени морской нимфы
-  # Chariklo - 10199 Харикло — один из крупнейших кентавров, самый большой астероид между Главным поясом и поясом Койпера. Харикло была открыта 15 февраля 1997 года Джеймсом Скотти в рамках проекта Spacewatch. Названа в честь Харикло — жены кентавра Хирона
-  # Hi'iaka - крупный внешний спутник карликовой планеты Хаумеа. 13 Он был обнаружен 26 января 2005 года
-  # Hyperion - восьмой спутник Сатурна
-  # S/2012 (38628) 1 - маленький нерегулярный спутник, который вращается вокруг транснептунового объекта и кандидата в карликовые планеты 38628 Хуя. Он был открыт 6 мая 2012 года командой под руководством Кита Нолла
-  # Larissa - Ларисса — внутренний спутник планеты Нептун. Также обозначается как Нептун VII. Ларисса была открыта Гарольдом Рейтсемой, Уильямом Хаббардом, Ларри Лебофски, Дэвидом Толеном 24 мая 1981 года благодаря случайному наблюдению с Земли покрытия этим спутником звезды. Повторно открыта в 1989 году при прохождении аппарата «Вояджер-2» возле Нептуна. Собственное название было дано 16 сентября 1991 года
-  # MK2 - это единственный спутник карликовой планеты Makemake
-  # Namaka - Намака — меньший внутренний спутник транснептуновой карликовой планеты Хаумеа. Он был открыт 30 июня 2005 года и назван в честь Намаки, богини моря в гавайской мифологии и одной из дочерей Хаумеа
-  # Weywot - естественный спутник транснептуновой карликовой планеты Кваоар. Был открыт Майклом Брауном и Терри-Энн Суер с помощью снимков, сделанных космическим телескопом «Хаббл» 14 февраля 2006 года
-  # Hale-Bopp - это комета. Она была открыта 23 июля 1995 года американскими астрономами Аланом Хейлом и Томасом Боппом
-  # Phobos - спутник Марса
-  # Deimos - спутник Марса
-  # Halley's comet - Комета Галлея (официальное название 1P/Halley) — яркая короткопериодическая комета, возвращающаяся к Солнцу каждые 75–76 лет. Названа в честь английского астронома Эдмунда Галлея. С кометой связаны метеорные потоки эта-Аквариды и Ориониды
-
-  def clickHandler(models, data):
-    renderer.setClickHandler(models, lambda: clickByPlanet(data))
-  def clickByPlanet(data):
-    name, radius, translated = data
-    if name != target:
-      changeTarget(name)
-      return
-    glyphs = renderer.glyphs
-    if name in selectedPlanets:
-      _, _, n, n2 = selectedPlanets.pop(name)
-      renderer.textureChain.remove_texture(n)
-      renderer.glyphs.delete(n2)
-    else:
-      icon = generateIcon(name)
-      n = renderer.textureChain.add_texture(icon, 0, 0, 0, 0.5, 0.5)
-      glyphs.setHeight(renderer.W / 8)
-      glyphs.setColor(0xadffad)
-      n2 = glyphs.add(0, 0, 0, planetDescriptions.get(name, "?"), True, False)
-      selectedPlanets[name] = planets[name] + (n, n2)
-
-  def updateIcons():
-    set_pos_WH = renderer.textureChain.set_pos_WH
-    camera_dist = renderer.camera_dist
-    setPosition = renderer.glyphs.setPosition
-    W = renderer.W
-    ratio = renderer.WH_ratio
-    for name, (radius, model, n, n2) in selectedPlanets.items():
-      x, y, z = pos = model.translate
-      dist = camera_dist(pos)
-      dist = max(dist / radius, 2)
-      size = 1 / dist
-      pos = (x, y, z, 1)._a_float
-      pos2d = FLOAT.new_array(4)
-      multiplyMV(pos2d, 0, renderer.MVPmatrix, 0, pos, 0)
-      x, y, _, w = pos2d
-      x /= w
-      y /= w
-      visible = w > 0 and size > 0.05
-      size2 = max(size, 0.05)
-      set_pos_WH(n, x, y, size, size, visible)
-      # set_pos_WH(n, x, y, size2, size2, w > 0)
-      setPosition(n2, x + size, y + size * ratio, size * W / 8, visible)
-
-  def SunDraw(origDraw):
-    def draw():
-      glUniform1i(uLightSource, 1)
-      origDraw()
-      glUniform1i(uLightSource, 0)
-    uLightSource = renderer.noPBR.uLightSource
-    return draw
-  def generateIcon(name):
-    try: return iconCache[name]
-    except KeyError: pass
-    motor = icon_motor_sun if name == "Sun" else icon_motor
-    model = iconModels[name]
-    iconCache[name] = icon = iconGenerator(model, renderer, motor)
-    return icon
-
-  unionM, PBR_unionM, charModelM = models
-  #     unionM.type = UnionModel
-  # PBR_unionM.type = UnionModel
-  #     unionM.models[i].type = MatrixModel
-  # PBR_unionM.models[i].type = MatrixModel
-  # charModelM.type = None | CharacterModel
-  models = sorted(unionM.models, key = lambda model: hypot(model.info["size"]))
-  groups = {}
-  order = []
-  for model in models:
-    key = model.info["node"]["_parent"]
-    if key in groups: groups[key].append(model)
-    else:
-      groups[key] = [model]
-      order.append(key)
-  planets = {}
-  planetDraws = []
-  halos = []
-  haloDraws = []
-  result = []
-  X = 0
-  planetNames = {"Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Ceres", "Eris"}
-  moonNames = {"Earth": ("Moon (Luna)",)}
-  targetNames = ("Sun", "Mercury", "Venus", "Earth", "Moon (Luna)", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Ceres", "Eris")
-  targetNameSet = set(targetNames) # только для print
-  iconModels = {}
-  iconCache = {}
-
-  for node in order:
-    group = groups[node]
-    name = node["_name"]
-    # print("🐾🐾🐕", len(group), name, ("🔥", "✅")[name in targetNameSet])
-
-    radius = group[-1].info["size"][0] # с учётом пояса и только X
-    if name not in planetNames:
-      if X: X += radius
-      pos = (X, -10, 0)
-      X += radius
-    else: pos = (0, 0, 0)
-
-    union = UnionModel(group)
-
-    scale = 1 / radius
-    icon_model = ScaleModel(union.clone(), (scale, scale, scale))
-    iconModels[name] = icon_model
-
-    n = len(group) - 1
-    while "decal" in group[n].info: n -= 1
-    radius = sum(group[n].info["size"]) / 3 # без учёта пояса и со всеми осями
-
-    translated = TranslateModel(union, pos)
-    result.append(translated)
-    planets[name] = radius, translated
-
-    for model in group:
-      if "decal" in model.info:
-        halos.append(model)
-        model._pos = translated
-      else:
-        draw = model.draw
-        if name == "Sun": draw = SunDraw(draw)
-        planetDraws.append(draw)
-
-    clickHandler(group[:n+1], (name, radius, translated))
-
-  sunS = planets["Sun"][0]
-  step = sunS / sunRadius
-  print("step:", step) # Условных единиц длины на одну AU
-  dist_div = 10
-  step /= dist_div # Т.к. их СЛИШКОМ много
-  sunPosition = planets["Sun"][1].translate
-  renderer.lightPos = sunPosition
-  day = 0  
-
-  target = "???"
-  targetN = -1
-  changeTarget(1)
-  prevTargetPos = 0
-  selectedPlanets = {}
-
-  renderer.camMoveEvent = haloSort
-  renderer.recalcPlanetPositions = recalcPlanetPositions
-  renderer.changeTarget = changeTarget
-  renderer.findNearestPlanet = findNearestPlanet
-
-  unionM = UnionModel(result)
-  unionM.draw = drawer
-  return unionM, PBR_unionM, charModelM
-
-
-
 class myRenderer:
   glVersion = 2
 
@@ -493,6 +199,9 @@ class myRenderer:
     self.findNearestPlanet = lambda: None
     self.lastNearestPlanet = "Sun"
 
+    self.CW_mode = False
+    self.chandelabra = None
+
   def fps(self):
     T = time()
     arr = self.frame_arr
@@ -506,7 +215,9 @@ class myRenderer:
         arr[pos] = fd
         self.frame_pos = (pos + 1) % 10
       self.fpsS = S = sum(arr) * 10 // len(arr)
-      self.glyphs.setText(self.fpsText, "fps: %s" % S, self.W / 16)
+      if self.CW_mode: text = "fps: %s\ncam: %.2f %.2f %.2f\nrot: %.2f %.2f %.2f" % (S, self.camX, self.camY, self.camZ, self.yaw, self.pitch, self.roll)
+      else: text = "fps: %s" % S
+      self.glyphs.setText(self.fpsText, text, self.W / 16)
     return self.fpsS
 
   def setTargetText(self, target):
@@ -538,9 +249,11 @@ class myRenderer:
     textures = __resource("textures.png")
     skybox_labeled = __resource("skybox_labeled.png")
     skybox_space = __resource("skybox_space.webp")
+    candle_sprite = __resource("fire.png")
     self.mainTexture = mainTextures = newTexture2(textures)
     skyboxLabeled = newTexture2(skybox_labeled)
     skyboxSpace   = newTexture2(skybox_space)
+    candleSprite  = newTexture2(candle_sprite)
 
     # все шейдерные программы в одном месте
 
@@ -560,6 +273,7 @@ class myRenderer:
     glyphs.printer = False
     self.colorama = Colorama(self)
     self.noise = Noise(self)
+    self.candleSprite = d2textureProgram(candleSprite, (8, 6), self)
 
     # настройка шейдерных программ
 
@@ -568,8 +282,12 @@ class myRenderer:
     gridProgram.add(142, 0.25, 6.75, 8, 2)
     gridProgram.add(45,  6.75, 6.75, 8, 3)
     gridProgram.setDirection(1)
-    gridProgram.add(70,  2.25, 0.25, 10, 4)
-    gridProgram.add(70,  8.75, 0.25, 10, 5)
+    self.deletable = [(), ()]
+    if not self.CW_mode:
+      self.deletable[0] = (
+        gridProgram.add(70,  2.25, 0.25, 10, 4),
+        gridProgram.add(70,  8.75, 0.25, 10, 5),
+      )
 
     self.skyboxN       = 2
     self.currentSkybox = self.skyboxes[self.skyboxN]
@@ -587,12 +305,32 @@ class myRenderer:
     )
 
     self.model_cache = {}
+    self.texture_cache = {}
     if False:
       union, PBR_model, character = loadRBXM(__resource("avatar.rbxm"), "avatar.rbxm", None, self)
       SolarSystem = WaitingModel()
+      CursWork = CursWorkPBR = WaitingModel()
     else:
-      SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", planetProcessor, self)
       union = PBR_model = character = WaitingModel()
+      if self.CW_mode: SolarSystem = WaitingModel()
+      else: SolarSystem, _, _ = loadRBXM(__resource("SolarSystem.rbxm"), "SolarSystem.rbxm", planetProcessor, self)
+
+      root_pos = FLOAT.new_array(16)
+      setIdentityM(root_pos, 0)
+      rotateM(root_pos, 0, -90, 0, 1, 0)
+      translateM(root_pos, 0, -381, 414, 252)
+      def cursWorkProcessor(models, renderer):
+        unionM, PBR_unionM, charModelM, misc = models
+        """
+        for props, pos in misc["lights"]:
+          print("L", pos[:])
+        for props, pos in misc["particles"]:
+          print("P", pos[:])
+        """
+        self.chandelabra = (pos[12:15] for props, pos in misc["lights"])
+        return models
+
+      CursWork, CursWorkPBR, _ = loadRBXM(__resource("CourseWork.rbxm"), "CourseWork.rbxm", cursWorkProcessor, self, root_pos)
     hierarchy(SolarSystem)
 
     union = RotateModel(union, (45, 0, 0))
@@ -601,13 +339,17 @@ class myRenderer:
     self.rbxPBRmodel = TranslateModel(PBR_model, (5, 0, 0))
     self.character = character
     self.SolarSystem = SolarSystem
+    self.CursWork = CursWork
+    self.CursWorkPBR = CursWorkPBR
 
     # первый сигнал перерасчёта матриц модели во всей иерархии моделей
-
+    
     self.calcViewMatrix()
 
     self.rbxPBRmodel.recalc(identity_mat)
     self.SolarSystem.recalc(identity_mat)
+    self.CursWork.recalc(identity_mat)
+    self.CursWorkPBR.recalc(identity_mat)
     self.ready = True
 
   def onSurfaceChanged(self, gl10, width, height):
@@ -632,13 +374,15 @@ class myRenderer:
     glyphs.setHeight(self.W / 16)
     glyphs.setColor(0xadddff)
     self.fpsText = glyphs.add(0, 0, 1, "fps: ?")
-    glyphs.setHeight(self.W / 8)
-    glyphs.setColor(0x0000ad)
-    glyphs.add(2.375, -0.25, 10, "<-")
-    glyphs.add(8.875, -0.25, 10, "->")
-    glyphs.setColor(0xadffdd)
-    glyphs.setHeight(self.W / 12)
-    self.targetText = glyphs.add(3.375, 0.25, 10, "loading...")
+    if not self.CW_mode:
+      glyphs.setHeight(self.W / 8)
+      glyphs.setColor(0x0000ad)
+      L = glyphs.add(2.375, -0.25, 10, "<-")
+      R = glyphs.add(8.875, -0.25, 10, "->")
+      glyphs.setColor(0xadffdd)
+      glyphs.setHeight(self.W / 12)
+      self.targetText = glyphs.add(3.375, 0.25, 10, "loading...")
+      self.deletable[1] = L, R, self.targetText
 
     self.ready2 = True
 
@@ -683,6 +427,7 @@ class myRenderer:
         if name != self.lastNearestPlanet:
           self.lastNearestPlanet = name
           self.changeTarget(name)
+        if name == "Sun" and D < 0: self.changeScene()
 
       td *= 10
       self.moveCam(x * td, y * td, z * td)
@@ -703,6 +448,34 @@ class myRenderer:
     buffer._m_get(arr)
     return bytes(arr)
 
+  def changeScene(self):
+    lightPos = self.chandelabra
+    if lightPos is None: return
+
+    def f():
+      self.CW_mode = True
+
+      self.camMoveEvent = lambda: None
+      self.recalcPlanetPositions = lambda: None
+      self.changeTarget = lambda inc: None
+      self.findNearestPlanet = lambda: None
+
+      remove_texture = self.gridProgram.remove
+      remove_glyph = self.glyphs.delete
+      textures, glyphs = self.deletable
+      for texture in textures: remove_texture(texture)
+      for glyph in glyphs: remove_glyph(glyph)
+
+      self.yaw, self.pitch, self.roll = 180, -24, 0
+      self.setCamPos(4, 20, -48)
+      self.lightPos = lightPos[1]
+
+      candleSprite = self.candleSprite
+      candleSprite.printer = False
+      candleSprite.aspect = self.WH_ratio
+      self.candleSprites = ((candleSprite.add(0, 0, 0, -0.2), lightPos[i]) for i in range(3))
+    runOnGLThread(self.view, f)
+
   def drawScene(self):
     # glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glClear(GL_DEPTH_BUFFER_BIT)
@@ -713,7 +486,6 @@ class myRenderer:
     #checkGLError()
 
     self.rbxModel.draw()
-
     self.pbr.draw(self.rbxPBRmodel)
 
     character = self.character
@@ -727,8 +499,20 @@ class myRenderer:
     enableProgram(program.program)
     for model in self.models: model.draw()
 
-    self.noPBR.draw(self.SolarSystem)
-    self.noise.draw()
+    if self.CW_mode:
+      self.noPBR.draw(self.CursWork)
+      # self.pbr.draw(self.CursWorkPBR)
+      self.noPBR.draw(self.CursWorkPBR) # :///
+      candleSprite = self.candleSprite
+      iteration = int(time() * 48)
+      calc_3d_to_2d = self.calc_3d_to_2d
+      for n, pos in self.candleSprites:
+        x, y, z, size = calc_3d_to_2d(pos, 0.2, 0)
+        candleSprite.replace(n, (iteration + n * 120) % 48, x, y, -size, 0, False, False, z)
+      candleSprite.draw(self.WH_ratio, 0, None, False)
+    else:
+      self.noPBR.draw(self.SolarSystem)
+      self.noise.draw()
 
     self.textureChain.draw_textures()
     self.gridProgram.draw(self.WH_ratio, self.eventN)
@@ -848,6 +632,17 @@ class myRenderer:
     camX, camY, camZ = self.camera
     return (x - camX) ** 2 + (y - camY) ** 2 + (z - camZ) ** 2
 
+  def calc_3d_to_2d(self, pos, radius, min = 2):
+    x, y, z = pos
+    dist = self.camera_dist(pos)
+    dist = max(dist / radius, min)
+    size = 1 / dist
+    pos = (x, y, z, 1)._a_float
+    pos2d = FLOAT.new_array(4)
+    multiplyMV(pos2d, 0, self.MVPmatrix, 0, pos, 0)
+    x, y, z, w = pos2d
+    return x/w, y/w, z/w, size
+
   reverse = {
     "cr": onSurfaceCreated,
     "ch": onSurfaceChanged,
@@ -879,7 +674,7 @@ main_xml = """
 class activityHandler:
   def onCreate(self, activity):
     global HALT
-    def halt(message):
+    def halt(message = None):
       try:
         activity._m_finish()
         renderer.ready = renderer.ready2 = False
@@ -889,6 +684,7 @@ class activityHandler:
 
     ctx = activity._m_getApplicationContext().cast(Context)
     print("onCreate", self, activity)
+    # dex(ctx)
 
     activity._m_requestWindowFeature(FEATURE_NO_TITLE) # Remove title bar
     activity._m_getWindow()._m_setFlags(FLAG_FULLSCREEN, FLAG_FULLSCREEN) # Remove notification bar

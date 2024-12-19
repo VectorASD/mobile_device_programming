@@ -305,7 +305,7 @@ def checkProgram(program):
   if type(program) is not tuple:
     print2("💥 shader program error:")
     print2(program)
-    exit()
+    HALT()
   if len(program) == 1: program = program[0]
   print2("✅ OK shader program:", program)
   if not program: HALT("Это не GL-поток")

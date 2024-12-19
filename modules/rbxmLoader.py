@@ -65,7 +65,8 @@ def getCFrame(props):
   if type == 0x10: return value # CFrame
   if type == 0x1e: # OptionalCoordinateFrame
     useful, cframe = value
-    if useful: return cframe
+    # if useful: return cframe
+    return cframe
 
 def getHumanoid(node):
   res = None
@@ -87,36 +88,36 @@ def getDecals(node):
 
 def checkString(prop):
   type, value = prop
-  if type != 0x01: exit("Это не String: %s" % prop)
+  if type != 0x01: HALT("Это не String: %s" % prop)
   return value
 def checkFloat32(prop):
   type, value = prop
-  if type != 0x04: exit("Это не Float32: %s" % prop)
+  if type != 0x04: HALT("Это не Float32: %s" % prop)
   return value
 def checkColor3(prop):
   type, value = prop
-  if type != 0x0c: exit("Это не Color3: %s" % prop)
+  if type != 0x0c: HALT("Это не Color3: %s" % prop)
   return value
 def checkVector3(prop):
   type, value = prop
-  if type != 0x0e: exit("Это не Vector3: %s" % prop)
+  if type != 0x0e: HALT("Это не Vector3: %s" % prop)
   return value
 def checkCFrame(prop):
   type, value = prop
-  if type != 0x10: exit("Это не CFrame: %s" % prop)
+  if type != 0x10: HALT("Это не CFrame: %s" % prop)
   return value
 def checkEnum(prop, arr):
   type, value = prop
-  if type != 0x12: exit("Это не Enum: %s" % prop)
-  if value < 0 or value >= len(arr): exit("Значение Enum за пределами: %s (0..%s)" % (value, len(arr) - 1))
+  if type != 0x12: HALT("Это не Enum: %s" % prop)
+  if value < 0 or value >= len(arr): HALT("Значение Enum за пределами: %s (0..%s)" % (value, len(arr) - 1))
   return value, arr[value]
 def checkReferent(prop):
   type, value = prop
-  if type != 0x13: exit("Это не Referent: %s" % prop)
+  if type != 0x13: HALT("Это не Referent: %s" % prop)
   return value
 def checkColor3uint8(prop):
   type, value = prop
-  if type != 0x1a: exit("Это не Color3uint8: %s" % prop)
+  if type != 0x1a: HALT("Это не Color3uint8: %s" % prop)
   return value
 
 
@@ -170,7 +171,7 @@ def getCube():
     (-1,  1,  1,   0, 1), # 7
   )
   add_square(0,  1,  2,  0,  2,  3) # дно куба
-  add_square(0,  1,  4,  1,  4,  5) # фронт
+  add_square(0,  4,  1,  1,  4,  5) # фронт
   add_square(1,  5,  2,  2,  5,  6) # правый бок
   add_square(2,  7,  3,  2,  6,  7) # тыл
   add_square(3,  7,  0,  0,  7,  4) # левый бок
@@ -179,7 +180,7 @@ def getCube():
 
 
 
-def modelHandler(root):
+def modelHandler(root, root_pos):
   mesh_cache = STORAGE("mesh_cache")
 
   def mesh2model(mesh_id):
@@ -201,6 +202,7 @@ def modelHandler(root):
     id = node["_id"]
     isBody = is_character_part and not accessory
     isPart = node["_class"] == "Part"
+    alpha = 1 - checkFloat32(props["Transparency"])
 
     #print("...", checkVector3(props["size"]), checkVector3(props["InitialSize"]))
     x, y, z = checkVector3(props["size"])
@@ -214,7 +216,7 @@ def modelHandler(root):
       shape, shapeName = checkEnum(props["shape"], ("Ball", "Block", "Cylinder", "Wedge", "CornerWedge")) # в роблоксе: Enum.PartType
       # print(shape, shapeName)
       model = getCube()
-      if shape != 1: exit("Пока поддерживается только форма Block")
+      # if shape != 1: HALT("Пока поддерживается только форма Block, а не " + shapeName)
       model_name = "cube"
     else:
       model_name = checkString(props["MeshId"])
@@ -225,53 +227,65 @@ def modelHandler(root):
     decals = getDecals(node)
     if decals:
       decal_props = decals[0]["_props"]
-      texture = cdnLoader(checkString(decal_props["Texture"]))
+      textureName = checkString(decal_props["Texture"])
+      texture = cdnLoader(textureName), textureName
       face = checkEnum(decal_props["Face"], ("Right", "Top", "Back", "Left", "Bottom", "Front")) # в роблоксе: Enum.NormalId
       r, g, b = checkColor3(decal_props["Color3"])
-      a = checkFloat32(decal_props["Transparency"])
-      # print("•", len(texture), texture[:32], face, (r, g, b, 1 - a))
-      info["decal"] = texture, face, (r, g, b, 1 - a)
+      a = 1 - checkFloat32(decal_props["Transparency"])
+      if a <= 0 and alpha <= 0: return
+      # print("•", len(texture), texture[:32], face, (r, g, b, a))
+      info["decal"] = texture, face, (r, g, b, a)
+      # print("PUT DECAL", node["_name"])
+    elif alpha <= 0: return
 
     model_data = VBOdata, IBOdata, model_name
     SA = getSurfaceAppearance(node)
     if SA:
-      if isPart: exit("Пока не поддерживается Part + SA :/")
+      if isPart: HALT("Пока не поддерживается Part + SA :/")
       SA_props = SA["_props"]
       color = checkColor3(SA_props["Color"])
-      colorMap = cdnLoader(checkString(SA_props["ColorMap"]))
-      metalnessMap = cdnLoader(checkString(SA_props["MetalnessMap"]))
-      normalMap = cdnLoader(checkString(SA_props["NormalMap"]))
-      roughnessMap = cdnLoader(checkString(SA_props["RoughnessMap"]))
+      colorMapName = checkString(SA_props["ColorMap"])
+      metalnessMapName = checkString(SA_props["MetalnessMap"])
+      normalMapName = checkString(SA_props["NormalMap"])
+      roughnessMapName = checkString(SA_props["RoughnessMap"])
+      colorMap = cdnLoader(colorMapName), colorMapName
+      metalnessMap = cdnLoader(metalnessMapName), metalnessMapName
+      normalMap = cdnLoader(normalMapName), normalMapName
+      roughnessMap = cdnLoader(roughnessMapName), roughnessMapName
       PBR_textures = color, colorMap, (metalnessMap, normalMap, roughnessMap)
       tex = PBR_textures
     else:
       r, g, b = checkColor3uint8(props["Color3uint8"])
-      a = checkFloat32(props["Transparency"])
-      texture = None if isPart else cdnLoader(checkString(props["TextureID"]))
+      if isPart: texture = None
+      else:
+        textureName = checkString(props["TextureID"])
+        texture = cdnLoader(textureName), textureName
       #texture = ((texture, (1, 1, 1, 1)),) if texture else ()
       #tex = (r / 255, g / 255, b / 255, 0), texture
-      if texture:
-        texture = texture, (1, 1, 1, 1 - a)
+      if texture and texture[0]:
+        texture = texture, (1, 1, 1, alpha)
         tex = (0, 0, 0, 0), (texture,)
-      else: tex = (r / 255, g / 255, b / 255, 1 - a), ()
+      else: tex = (r / 255, g / 255, b / 255, alpha), ()
 
     result = node, pos, model_data, tex, isBody, info
     return SA, result
 
-  def recurs(node, root_pos):
+  def recurs(node, root_pos, lvl):
     nonlocal motorTree
 
     id, parent, childs, className, name = node["_id"], node["_parent"], node["_childs"], node["_class"], node["_name"]
     props = node["_props"]
+    print("  " * lvl, name, className)
 
     if root_pos is None:
       pos = getCFrame(props)
       if pos is not None:
+        # print("POS FIND", pos, root_pos is None)
         mat = CFrame2mat_onlyPos(pos)
         root_pos = FLOAT.new_array(16)
         invertM(root_pos, 0, mat, 0)
 
-    if className == "Model":
+    if className in ("Model", "Tool"):
       humanoid = getHumanoid(node)
       # humanoid = None
       if humanoid is not None:
@@ -293,6 +307,8 @@ def modelHandler(root):
       else:
         pos = CFrame2mat(getCFrame(props))
         multiplyMM(pos, 0, root_pos, 0, pos, 0)
+        # print("POS:", pos[:])
+      root_pos = pos
 
       data = meshPart(node, pos, accessory, is_character_part)
       if data is not None:
@@ -324,34 +340,43 @@ def modelHandler(root):
       color = checkColor3(props["Color3"])
       asset = cdnLoader(checkString(props["PantsTemplate"]))
       pantss.append((color, asset))
+    elif className == "ParticleEmitter":
+      # print("ParticleEmitter:", props)
+      misc["particles"].append((props, root_pos))
+    elif className == "PointLight":
+      # print("PointLight:", props)
+      misc["lights"].append((props, root_pos))
 
-    for child in childs: recurs(child, root_pos)
+    lvl += 1
+    for child in childs: recurs(child, root_pos, lvl)
 
   models = []
   PBR_models = []
   shirts = []
   pantss = []
+  misc = {"particles": [], "lights": []}
 
   motorTree = None
   used_in_tree = set()
   characterModels = []
   characterPBR_models = []
 
-  recurs(root, None)
+  recurs(root, root_pos, 0)
   character = motorTree, characterModels, characterPBR_models
 
-  return models, PBR_models, shirts, pantss, character
+  return models, PBR_models, shirts, pantss, character, misc
 
 
 
-def modelLoader(root, name, renderer):
+def modelLoader(root, name, renderer, root_pos):
   global dbgTextures
 
   cache = STORAGE("rbxm_modelHandler_cache")
-  try: models, PBR_models, shirts, pantss, character = cache[name]
+  try: record = cache[name]
   except KeyError:
-    models, PBR_models, shirts, pantss, character = record = modelHandler(root)
+    record = modelHandler(root, root_pos)
     cache[name] = record
+  models, PBR_models, shirts, pantss, character, misc = record
 
   # pants = newTexture2(pantss[0][1])
   # print("🐾pants texture:", pants)
@@ -363,4 +388,4 @@ def modelLoader(root, name, renderer):
   charModel = None if character[0] is None else CharacterModel(character, renderer)
   print("🐕", len(models), len(PBR_models), len(character[1]), len(character[2]))
 
-  return union, PBR_union, charModel
+  return union, PBR_union, charModel, misc
